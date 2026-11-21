@@ -1,0 +1,1123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1a19'/%3E%3Cpath d='M5 21l6-6 5 4 10-11' fill='none' stroke='%230ca30c' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0d0d0d; --surface:#1a1a19; --surface2:#242423; --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --neutral:#383835;
+  --up:#0ca30c; --up-ink:#35c435; --down:#d03b3b; --down-ink:#f07a7a; --warn:#fab219; --warn-ink:#fab219;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --accent:#3987e5;
+  --shadow:0 12px 40px rgba(0,0,0,.55);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme:light;
+    --bg:#f9f9f7; --surface:#fcfcfb; --surface2:#f0efec; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --neutral:#e6e5df;
+    --up:#0ca30c; --up-ink:#006300; --down:#d03b3b; --down-ink:#b42a2a; --warn:#fab219; --warn-ink:#7a5200;
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --accent:#2a78d6;
+    --shadow:0 12px 40px rgba(0,0,0,.18);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.up{color:var(--up-ink)} .down{color:var(--down-ink)} .flat{color:var(--ink2)}
+.d{font-variant-numeric:tabular-nums;white-space:nowrap}
+.d i{font-style:normal;font-size:.72em;margin-right:.18em;position:relative;top:-.08em}
+.muted{color:var(--muted)}
+svg.sp{display:block;overflow:visible}
+svg.sp polyline{fill:none;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+svg.sp.up polyline{stroke:var(--up)} svg.sp.down polyline{stroke:var(--down)}
+svg.sp .sp-base{stroke:var(--axis);stroke-width:1}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:24px;min-width:24px;padding:0 6px;border-radius:6px;color:var(--ink2);border:1px solid var(--border);background:var(--surface)}
+.icon-btn:hover{color:var(--ink);background:var(--surface2)}
+.icon-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.status{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;color:var(--ink2)}
+.status .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.status.open .dot{background:var(--up);box-shadow:0 0 0 3px color-mix(in srgb,var(--up) 25%,transparent)}
+.status.pre .dot,.status.post .dot,.status.demo .dot{background:var(--warn)}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:999px;border:1px solid var(--border);font-size:11px;color:var(--ink2);white-space:nowrap}
+.badge.live b{color:var(--up-ink)} .badge.warn{border-color:color-mix(in srgb,var(--warn) 55%,transparent);color:var(--warn-ink)}
+.badge.demo{background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--warn) 14%,transparent) 6px 12px)}
+
+/* ───────── compact ticker ───────── */
+#ticker{display:none;flex-direction:column;height:100vh;overflow:hidden;background:var(--surface)}
+.mode-ticker{overflow:hidden}
+.mode-ticker #ticker{display:flex}
+.t-head{display:flex;align-items:center;gap:12px;height:30px;flex:none;padding:0 6px 0 10px;border-bottom:1px solid var(--grid);font-size:12px;white-space:nowrap;overflow:hidden}
+.t-idx{display:flex;gap:14px;flex:1;min-width:0;overflow:hidden}
+.t-idx span.n{color:var(--muted);margin-right:5px}
+.t-idx button{flex:none}
+.t-meta{display:flex;gap:8px;align-items:center;color:var(--muted);flex:none}
+.tape{flex:1;min-height:0;overflow:hidden;display:flex;align-items:center}
+.tape-track{display:flex;flex:none;white-space:nowrap;will-change:transform;animation:tape 120s linear infinite}
+.tape:hover .tape-track{animation-play-state:paused}
+@keyframes tape{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.ti{display:inline-flex;align-items:baseline;gap:.42em;padding:.15em .85em;font-size:clamp(15px,calc((100vh - 30px) * .27),30px);border-right:1px solid var(--grid)}
+.ti b{font-weight:650;letter-spacing:.01em}
+.ti .p{color:var(--ink2);font-variant-numeric:tabular-nums}
+.ti .d{font-size:.82em}
+.ti:hover{background:var(--surface2)}
+.board{display:none}
+@media (max-height:69px){ .t-head{display:none} .ti{font-size:clamp(13px,46vh,24px)} }
+@media (min-height:230px){
+  .tape{flex:none;height:58px;border-bottom:1px solid var(--grid)} .ti{font-size:21px}
+  .board{display:grid;flex:1;min-height:0;overflow:auto;padding:10px;gap:6px;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));align-content:start;background:var(--bg)}
+}
+@media (max-width:520px){ .t-meta .upd{display:none} }
+@media (prefers-reduced-motion:reduce){ .tape{overflow-x:auto} .tape-track{animation:none} .tape-track .dup{display:none} }
+.chip{display:flex;flex-direction:column;gap:1px;padding:6px 8px;border-radius:7px;text-align:left;background:color-mix(in oklab,var(--heat,var(--neutral)) var(--heat-a,0%),var(--surface2));border:1px solid var(--border);min-width:0}
+.chip:hover{border-color:var(--ink2)}
+.chip b{font-weight:650;font-size:12.5px}
+.chip .p{font-size:11.5px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.chip .d{font-size:12px;color:var(--ink)}
+
+/* ───────── analysis ───────── */
+#analysis{display:none;min-height:100vh;padding:12px 18px 26px;max-width:2300px;margin:0 auto}
+.mode-analysis #analysis{display:block}
+.a-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+.brand{font-size:17px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:8px}
+.brand svg{width:20px;height:20px}
+.a-idx{display:flex;gap:8px;flex:1;min-width:0;flex-wrap:wrap}
+.idx{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:5px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--border);text-align:left}
+.idx:hover{background:var(--surface2)}
+.idx .idx-n{font-size:11px;color:var(--muted);grid-column:1} .idx .idx-v{font-weight:650;font-size:14px;grid-column:1;font-variant-numeric:tabular-nums}
+.idx .idx-r{grid-column:2;grid-row:1/3;display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:12px}
+.a-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.notice{display:flex;gap:8px;align-items:flex-start;padding:6px 10px;border-radius:8px;border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent);color:var(--ink2);font-size:12px;margin-bottom:10px}
+.notice b{color:var(--ink)}
+.notice.err{border-color:color-mix(in srgb,var(--down) 55%,transparent);background:color-mix(in srgb,var(--down) 9%,transparent)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 12px;min-width:0;text-align:left;display:block}
+button.kpi:hover{background:var(--surface2)}
+.kpi .k-l{font-size:11.5px;color:var(--muted)} .kpi .k-v{font-size:20px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi .k-s{font-size:11.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg{display:flex;gap:2px;height:6px;margin:5px 0 3px} .seg i{display:block;height:100%;border-radius:2px;min-width:2px}
+.seg .u{background:var(--up)} .seg .f{background:var(--axis)} .seg .dn{background:var(--down)}
+.cols{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,1fr) minmax(0,1.14fr);gap:12px;align-items:stretch}
+.col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 13px 12px;min-width:0}
+.card h2{margin:0 0 2px;font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card h2 .sub{font-weight:400;color:var(--muted);font-size:11.5px}
+.card h2 .sp-r{margin-left:auto;display:flex;gap:4px}
+.card .hint{font-size:11.5px;color:var(--muted);margin:0 0 6px}
+table{border-collapse:collapse;width:100%}
+th{font-weight:500;font-size:11px;color:var(--muted);text-align:right;padding:4px 6px;border-bottom:1px solid var(--grid);white-space:nowrap}
+th:first-child,td:first-child{text-align:left;padding-left:2px}
+th.l,td.l{text-align:left}
+td{padding:4px 6px;border-bottom:1px solid var(--grid);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr{cursor:pointer} tbody tr:hover{background:var(--surface2)}
+td .sym{font-weight:650} td .nm{display:block;font-size:11px;color:var(--muted);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;padding:0 6px;border-radius:999px;border:1px solid var(--border);color:var(--ink2);white-space:nowrap}
+.rb{position:relative;width:54px;height:6px;border-radius:3px;background:var(--neutral);display:inline-block;vertical-align:middle}
+.rb i{position:absolute;top:-2px;width:4px;height:10px;border-radius:2px;background:var(--ink);box-shadow:0 0 0 2px var(--surface);transform:translateX(-50%)}
+.lean{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;white-space:nowrap;color:var(--ink2)}
+.lean i{font-style:normal;font-size:9px}
+.lean.up i{color:var(--up-ink)} .lean.down i{color:var(--down-ink)} .lean.flat i{color:var(--muted)}
+.tgl{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.tgl button{padding:1px 8px;font-size:11.5px;color:var(--ink2)} .tgl button+button{border-left:1px solid var(--border)}
+.tgl button[aria-pressed="true"]{background:var(--surface2);color:var(--ink);font-weight:600}
+/* sector rows */
+.srow{display:grid;grid-template-columns:minmax(150px,1.5fr) minmax(70px,1fr) 56px 40px 64px;gap:8px;align-items:center;padding:5px 2px;border-bottom:1px solid var(--grid);width:100%;text-align:left;cursor:default}
+.srow:last-child{border-bottom:0}
+.srow .s-n{min-width:0} .srow .s-n b{font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow .s-n span{font-size:11px;color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dbar{position:relative;height:16px}
+.dbar::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--axis)}
+.dbar i{position:absolute;top:2px;height:12px;min-width:2px}
+.dbar i.u{left:50%;background:var(--up);border-radius:0 4px 4px 0} .dbar i.dn{right:50%;background:var(--down);border-radius:4px 0 0 4px}
+.s-head{font-size:11px;color:var(--muted);padding-bottom:3px;border-bottom:1px solid var(--grid)}
+.srow.s-head{padding-top:0}
+/* predictions */
+.pred-card{display:flex;flex-direction:column;flex:1}
+.pred-list{flex:1 1 0;height:0;min-height:420px;overflow:auto;margin:0 -6px;padding:0 6px}
+.pred{border-top:1px solid var(--grid);padding:10px 0 11px}
+.pred:first-child{border-top:0;padding-top:4px}
+.pred-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;cursor:pointer}
+.pred-h .sym{font-weight:700;font-size:14px} .pred-h .nm{color:var(--muted);font-size:11.5px}
+.pred-h .mv{margin-left:auto}
+.call{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 6px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-weight:650;font-size:12px;border:1px solid var(--border);background:var(--surface2)}
+.pill.up{border-color:color-mix(in srgb,var(--up) 60%,transparent)} .pill.down{border-color:color-mix(in srgb,var(--down) 60%,transparent)}
+.pill i{font-style:normal;font-size:9px}
+.call .meta{font-size:11.5px;color:var(--ink2)}
+.spec{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--warn-ink);border:1px solid color-mix(in srgb,var(--warn) 50%,transparent);border-radius:4px;padding:0 5px}
+.args{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.args h3{margin:0 0 2px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.args ul{margin:0;padding:0 0 0 15px} .args li{margin:0 0 4px;color:var(--ink2);font-size:12px;line-height:1.38}
+.args .con li::marker{color:var(--warn-ink)}
+.flip{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
+.flip b{color:var(--ink2);font-weight:600}
+/* heat board + full table */
+.sect{margin-top:12px}
+/* sector outlook */
+.ol{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 22px;margin-top:6px}
+.ol-h{min-width:0;padding-left:22px;border-left:1px solid var(--grid)} .ol-h:first-child{padding-left:0;border-left:0}
+.ol-h>h3{margin:0 0 6px;font-size:13px;font-weight:650} .ol-h>h3 span{font-weight:400;color:var(--muted);font-size:11.5px;margin-left:6px}
+.ol h4{margin:10px 0 3px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.ol h4 i{font-style:normal;font-size:9px;margin-right:5px}
+.pick{padding:5px 0 6px;border-top:1px solid var(--grid)}
+.pick button{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left}
+.pick button:hover .pk-n{text-decoration:underline}
+.pick .pk-n{font-weight:650} .pick .pk-n i{font-style:normal;font-size:9px;margin-right:6px;position:relative;top:-1px}
+.pick .pk-o{margin-left:auto;font-size:11.5px;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pick p{margin:2px 0 0;font-size:12px;line-height:1.38;color:var(--ink2)} .pick p b{font-weight:600;color:var(--ink)}
+.pick p.but b{color:var(--warn-ink)}
+.ol-none{font-size:12px;color:var(--muted);padding:5px 0;border-top:1px solid var(--grid);margin:0}
+.ol-rank{display:grid;grid-template-columns:minmax(96px,1fr) minmax(60px,1.2fr) 44px;gap:2px 8px;align-items:center;font-size:11.5px;color:var(--ink2)}
+.ol-rank .dbar{height:12px} .ol-rank .dbar i{top:2px;height:8px}
+.ol-rank span.n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ol-cav{margin:0;padding:0 0 0 15px} .ol-cav li{font-size:12px;line-height:1.38;color:var(--ink2);margin-bottom:4px} .ol-cav li::marker{color:var(--warn-ink)}
+@media (max-width:1100px){ .ol{grid-template-columns:1fr} .ol-h{padding-left:0;border-left:0;margin-top:14px} .ol-h:first-child{margin-top:0} }
+.heat{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px 16px}
+.heat .hg h3{margin:0 0 5px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:baseline} .heat .hg h3 span{font-weight:400;font-size:11.5px}
+.heat .hc{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:4px}
+.heat .chip{padding:4px 6px} .heat .chip b{font-size:12px} .heat .chip .d{font-size:11.5px}
+.legend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.legend .ramp{display:flex;gap:2px} .legend .ramp i{width:16px;height:8px;border-radius:2px;display:block}
+.tablewrap{overflow:auto;max-height:560px}
+.full th{position:sticky;top:0;background:var(--surface);cursor:pointer;user-select:none;z-index:1}
+.full th:hover{color:var(--ink)} .full th.on{color:var(--ink);font-weight:650}
+.foot{margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.5}
+@media (max-width:1680px){ .c52{display:none} }
+@media (max-width:1440px){ .c5{display:none} }
+@media (max-width:1180px){ .cols{grid-template-columns:1fr 1fr} .col.c3{grid-column:1/-1} .pred-list{height:auto;max-height:70vh;flex:none} }
+@media (max-width:780px){ .cols{grid-template-columns:1fr} .args{grid-template-columns:1fr} #analysis{padding:10px} }
+/* modal */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto;z-index:20}
+#modal[hidden]{display:none}
+.sheet{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);width:min(1120px,100%);padding:16px 18px 18px}
+.m-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.m-head h2{margin:0;font-size:20px} .m-head .nm{color:var(--ink2)} .m-head .px{font-size:20px;font-weight:650;margin-left:auto;font-variant-numeric:tabular-nums}
+.m-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;margin-top:10px}
+@media (max-width:860px){ .m-grid{grid-template-columns:1fr} }
+.chart{position:relative}
+.chart svg{display:block;width:100%}
+.chart .gl{stroke:var(--grid);stroke-width:1} .chart .ax{fill:var(--muted);font-size:10.5px}
+.chart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .l1{stroke:var(--s1)} .chart .l2{stroke:var(--s2)} .chart .l3{stroke:var(--s3)}
+.chart .area{fill:var(--s1);opacity:.1}
+.chart .ch{stroke:var(--axis);stroke-width:1}
+.chart .dot{stroke:var(--surface);stroke-width:2}
+.lg{display:flex;gap:14px;font-size:11.5px;color:var(--ink2);margin:2px 0 4px;flex-wrap:wrap}
+.lg i{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:5px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px 12px;margin-top:10px}
+.stats div{min-width:0} .stats span{display:block;font-size:11px;color:var(--muted)} .stats b{font-weight:600;font-variant-numeric:tabular-nums}
+.sig{width:100%;margin-top:8px} .sig td{font-size:12px;padding:4px 4px}
+.sig .mb{position:relative;width:70px;height:8px;background:var(--neutral);border-radius:4px;display:inline-block}
+.sig .mb::before{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--axis)}
+.sig .mb i{position:absolute;top:0;height:8px} .sig .mb i.u{left:50%;background:var(--up);border-radius:0 4px 4px 0} .sig .mb i.dn{right:50%;background:var(--down);border-radius:4px 0 0 4px}
+#tip{position:fixed;z-index:40;pointer-events:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12px;box-shadow:var(--shadow);white-space:nowrap}
+#tip[hidden]{display:none}
+#tip .r{display:flex;gap:10px;justify-content:space-between} #tip .r i{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:5px}
+#boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--surface);z-index:50}
+</style>
+</head>
+<body class="mode-ticker">
+
+<div id="boot">Loading market data…</div>
+
+<!-- compact ticker -->
+<section id="ticker" aria-label="Compact ticker">
+  <div class="t-head">
+    <span id="t-status" class="status"></span>
+    <div id="t-idx" class="t-idx"></div>
+    <span id="t-meta" class="t-meta"></span>
+    <button class="icon-btn" data-act="expand" title="Expand to full-screen analysis (F)" aria-label="Expand to full-screen analysis">
+      <svg viewBox="0 0 16 16"><path d="M9.5 2H14v4.5M6.5 14H2V9.500M14 2L9 7M2 14l5-5"/></svg>
+    </button>
+  </div>
+  <div class="tape" id="tape"><div class="tape-track" id="tape-track"></div></div>
+  <div class="board" id="board"></div>
+</section>
+
+<!-- full analysis -->
+<main id="analysis" aria-label="Market analysis">
+  <header class="a-head">
+    <div class="brand"><svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="var(--surface2)"/><path d="M5 21l6-6 5 4 10-11" fill="none" stroke="var(--up)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Ticker</div>
+    <span id="a-status" class="status"></span>
+    <div id="a-idx" class="a-idx"></div>
+    <div class="a-tools">
+      <span id="a-src"></span>
+      <button class="icon-btn" data-act="refresh" title="Refresh now (R)"><svg viewBox="0 0 16 16"><path d="M13.500 8a5.500 5.500 0 1 1-1.600-3.900M13.500 2v3h-3"/></svg>Refresh</button>
+      <button class="icon-btn" data-act="collapse" title="Back to compact ticker (Esc or F)"><svg viewBox="0 0 16 16"><path d="M14 2L9.500 6.500M9.500 2.500v4h4M2 14l4.500-4.500M6.500 13.500v-4h-4"/></svg>Compact</button>
+    </div>
+  </header>
+  <div id="a-alert"></div>
+  <div class="notice"><span>⚠</span><span><b>Speculative, not financial advice.</b> Every "lean" below comes from a simple rule-based model that only sees prices. It knows nothing about earnings, news, or your situation, and it will often be wrong. Each call is shown with the strongest arguments against it.</span></div>
+  <div id="a-kpis" class="kpis"></div>
+  <div class="cols">
+    <div class="col c1" id="a-movers"></div>
+    <div class="col c2" id="a-sectors"></div>
+    <div class="col c3" id="a-preds"></div>
+  </div>
+  <div class="card sect" id="a-outlook"></div>
+  <div class="card sect" id="a-heat"></div>
+  <div class="card sect" id="a-full"></div>
+  <p class="foot" id="a-foot"></p>
+</main>
+
+<div id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+<div id="tip" hidden></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════════════
+   Ticker — a lightweight US market watcher.
+   One window, two forms: a compact ticker and a full-screen analysis view.
+   Edit the watchlist below to change what is tracked.
+   ════════════════════════════════════════════════════════════════════ */
+
+const SECTORS = [
+  {id:'tech', name:'Technology',             short:'Tech',        etf:'XLK',  style:'cyclical'},
+  {id:'comm', name:'Communication Services', short:'Comm',        etf:'XLC',  style:'cyclical'},
+  {id:'disc', name:'Consumer Discretionary', short:'Cons. Disc.', etf:'XLY',  style:'cyclical'},
+  {id:'fin',  name:'Financials',             short:'Financials',  etf:'XLF',  style:'cyclical'},
+  {id:'ind',  name:'Industrials',            short:'Industrials', etf:'XLI',  style:'cyclical'},
+  {id:'mat',  name:'Materials',              short:'Materials',   etf:'XLB',  style:'cyclical'},
+  {id:'ener', name:'Energy',                 short:'Energy',      etf:'XLE',  style:'cyclical'},
+  {id:'hlth', name:'Health Care',            short:'Health',      etf:'XLV',  style:'defensive'},
+  {id:'stap', name:'Consumer Staples',       short:'Staples',     etf:'XLP',  style:'defensive'},
+  {id:'util', name:'Utilities',              short:'Utilities',   etf:'XLU',  style:'defensive'},
+  {id:'re',   name:'Real Estate',            short:'Real Estate', etf:'XLRE', style:'defensive'},
+];
+// sector: SYMBOL Name | SYMBOL Name | ...
+const WATCHLIST = `
+tech: AAPL Apple | MSFT Microsoft | NVDA NVIDIA | AVGO Broadcom | ORCL Oracle | CRM Salesforce | AMD AMD | ADBE Adobe | CSCO Cisco | INTC Intel | IBM IBM | QCOM Qualcomm | TXN Texas Instruments | PLTR Palantir
+comm: GOOGL Alphabet | META Meta Platforms | NFLX Netflix | DIS Walt Disney | T AT&T | VZ Verizon | CMCSA Comcast | TMUS T-Mobile US
+disc: AMZN Amazon | TSLA Tesla | HD Home Depot | MCD McDonald's | NKE Nike | SBUX Starbucks | LOW Lowe's | BKNG Booking Holdings
+fin:  BRK-B Berkshire Hathaway | JPM JPMorgan Chase | V Visa | MA Mastercard | BAC Bank of America | WFC Wells Fargo | GS Goldman Sachs | MS Morgan Stanley
+ind:  GE GE Aerospace | CAT Caterpillar | BA Boeing | UNP Union Pacific | HON Honeywell | RTX RTX | UPS UPS
+mat:  LIN Linde | SHW Sherwin-Williams | FCX Freeport-McMoRan
+ener: XOM Exxon Mobil | CVX Chevron | COP ConocoPhillips
+hlth: LLY Eli Lilly | UNH UnitedHealth | JNJ Johnson & Johnson | MRK Merck | ABBV AbbVie | PFE Pfizer | TMO Thermo Fisher | ABT Abbott
+stap: WMT Walmart | PG Procter & Gamble | KO Coca-Cola | PEP PepsiCo | COST Costco | PM Philip Morris
+util: NEE NextEra Energy | SO Southern Company | DUK Duke Energy
+re:   PLD Prologis | AMT American Tower | EQIX Equinix
+`;
+const INDICES = [['^GSPC','S&P 500'],['^DJI','Dow 30'],['^IXIC','Nasdaq'],['^RUT','Russell 2000'],['^VIX','VIX']];
+
+const SECTOR_BY_ID = Object.fromEntries(SECTORS.map(s => [s.id, s]));
+const UNIVERSE = [];
+WATCHLIST.trim().split('\n').forEach(line => {
+  const i = line.indexOf(':'); const sector = SECTOR_BY_ID[line.slice(0, i).trim()];
+  line.slice(i + 1).split('|').forEach(item => {
+    const t = item.trim(); if (!t || !sector) return;
+    const sp = t.indexOf(' ');
+    UNIVERSE.push({sym: sp < 0 ? t : t.slice(0, sp), name: sp < 0 ? t : t.slice(sp + 1).trim(), sector});
+  });
+});
+const INFO = {};
+UNIVERSE.forEach(u => INFO[u.sym] = {name:u.name, sector:u.sector, kind:'stock'});
+SECTORS.forEach(s => INFO[s.etf] = {name:s.name + ' sector ETF', sector:s, kind:'etf'});
+INDICES.forEach(([sym, name]) => INFO[sym] = {name, sector:null, kind:'index'});
+const ALL_SYMBOLS = [...INDICES.map(i => i[0]), ...SECTORS.map(s => s.etf), ...UNIVERSE.map(u => u.sym)];
+const LONG_SYMBOLS = ['^GSPC', ...SECTORS.map(s => s.etf)];   // two years of weekly closes, for the long-term sector outlook
+
+const PARAMS = new URLSearchParams(location.search);
+const API = PARAMS.get('api') || 'api';
+const FORCE_DEMO = PARAMS.has('demo');
+const CACHE_KEY = 'ticker-cache-v1';
+
+const S = {
+  quotes:{}, daily:{}, weekly:{}, stats:{}, pred:{}, market:null, outlook:null,
+  source:'none',            // live | cache | demo
+  updated:0, lastError:'', cacheTime:0,
+  force:null, selected:null, sectorRange:'chg', sort:{key:'chg', dir:-1},
+  dailyAt:0, loading:false, timer:null,
+};
+
+/* ───────── helpers ───────── */
+const $ = (s, r) => (r || document).querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const ok = x => x != null && isFinite(x);
+const fmtP = p => !ok(p) ? '–' : p.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtPct = (x, d) => !ok(x) ? '–' : (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x * 100).toFixed(d == null ? 2 : d) + '%';
+const fmtVol = v => !ok(v) ? '–' : v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'K' : String(v);
+const dirOf = x => !ok(x) ? 'flat' : x > 0.00005 ? 'up' : x < -0.00005 ? 'down' : 'flat';
+const ARW = {up:'▲', down:'▼', flat:'■'};
+const delta = (x, d) => { const k = dirOf(x); return `<span class="d ${k}"><i>${ARW[k]}</i>${ok(x) ? Math.abs(x * 100).toFixed(d == null ? 2 : d) + '%' : '–'}</span>`; };
+const pctSpan = (x, d) => `<span class="${dirOf(x)}">${fmtPct(x, d)}</span>`;
+const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+const stdev = a => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / (a.length - 1)); };
+const median = a => { if (!a.length) return null; const b = a.slice().sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+const sma = (a, n) => a.length >= n ? mean(a.slice(-n)) : null;
+const timeFmt = ts => new Date(ts).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+
+function rsi14(series) {
+  const n = 14; if (series.length < n + 1) return null;
+  let g = 0, l = 0;
+  for (let i = 1; i <= n; i++) { const ch = series[i] - series[i - 1]; if (ch > 0) g += ch; else l -= ch; }
+  g /= n; l /= n;
+  for (let i = n + 1; i < series.length; i++) { const ch = series[i] - series[i - 1]; g = (g * (n - 1) + Math.max(ch, 0)) / n; l = (l * (n - 1) + Math.max(-ch, 0)) / n; }
+  return l === 0 ? 100 : 100 - 100 / (1 + g / l);
+}
+function spark(c, prev, w, h) {
+  w = w || 84; h = h || 24;
+  if (!c || c.length < 2) return `<svg class="sp" width="${w}" height="${h}" aria-hidden="true"></svg>`;
+  let lo = Math.min.apply(null, c), hi = Math.max.apply(null, c);
+  if (ok(prev)) { lo = Math.min(lo, prev); hi = Math.max(hi, prev); }
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const x = i => (i / (c.length - 1)) * (w - 2) + 1, y = v => h - 2 - ((v - lo) / (hi - lo)) * (h - 4);
+  const pts = c.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+  const up = c[c.length - 1] >= (ok(prev) ? prev : c[0]);
+  return `<svg class="sp ${up ? 'up' : 'down'}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${ok(prev) ? `<line class="sp-base" x1="0" x2="${w}" y1="${y(prev).toFixed(1)}" y2="${y(prev).toFixed(1)}"/>` : ''}<polyline points="${pts}"/></svg>`;
+}
+// background tint for heat chips: green/red by size of move, neutral near zero (the signed number is always printed too)
+function heatStyle(x, full) {
+  if (!ok(x)) return '';
+  const a = Math.round(clamp(Math.abs(x) / (full || 0.03), 0, 1) * 62);
+  return `--heat:var(--${x >= 0 ? 'up' : 'down'});--heat-a:${a}%`;
+}
+
+/* ───────── data: Yahoo Finance "spark" via the local proxy ───────── */
+function parseSpark(json) {
+  const out = [], res = json && json.spark && json.spark.result;
+  if (!Array.isArray(res)) return out;
+  for (const r of res) {
+    const resp = r && r.response && r.response[0];
+    if (!resp || !resp.meta) continue;
+    const ts = resp.timestamp || [];
+    const q = resp.indicators && resp.indicators.quote && resp.indicators.quote[0];
+    const cl = (q && q.close) || [];
+    const t = [], c = [];
+    for (let i = 0; i < ts.length; i++) if (ok(cl[i]) && cl[i] > 0) { t.push(ts[i]); c.push(cl[i]); }
+    out.push({symbol: r.symbol || resp.meta.symbol, meta: resp.meta, t, c});
+  }
+  return out;
+}
+async function fetchJson(url, ms) {
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ms || 45000);
+  try {
+    const r = await fetch(url, {signal: ctl.signal, cache: 'no-store'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(to); }
+}
+async function fetchSpark(symbols, range, interval) {
+  const batches = [];
+  for (let i = 0; i < symbols.length; i += 20) batches.push(symbols.slice(i, i + 20));   // Yahoo caps spark at 20 symbols
+  const one = async b => {
+    const url = `${API}/spark?symbols=${encodeURIComponent(b.join(','))}&range=${range}&interval=${interval}`;
+    try { return parseSpark(await fetchJson(url)); }
+    catch (e) { await new Promise(r => setTimeout(r, 600)); return parseSpark(await fetchJson(url)); }   // one retry
+  };
+  const settled = await Promise.allSettled(batches.map(one));
+  const out = []; let err = null;
+  settled.forEach(s => { if (s.status === 'fulfilled') out.push.apply(out, s.value); else err = s.reason; });
+  if (!out.length) throw err || new Error('No data returned');
+  return out;
+}
+function applyIntraday(list) {
+  for (const r of list) {
+    const m = r.meta, last = r.c.length ? r.c[r.c.length - 1] : null;
+    const price = ok(m.regularMarketPrice) ? m.regularMarketPrice : last;
+    if (!ok(price)) continue;
+    S.quotes[r.symbol] = {
+      price, prev: ok(m.previousClose) ? m.previousClose : m.chartPreviousClose,
+      hi: m.regularMarketDayHigh, lo: m.regularMarketDayLow, vol: m.regularMarketVolume,
+      hi52: m.fiftyTwoWeekHigh, lo52: m.fiftyTwoWeekLow,
+      time: m.regularMarketTime || (r.t.length ? r.t[r.t.length - 1] : Math.floor(Date.now() / 1000)),
+      gmt: m.gmtoffset || 0, period: m.currentTradingPeriod || null, t: r.t, c: r.c,
+    };
+  }
+}
+function applyDaily(list) { for (const r of list) if (r.c.length) S.daily[r.symbol] = {t: r.t, c: r.c}; }
+function applyWeekly(list) { S.weekly = {}; for (const r of list) if (r.c.length) S.weekly[r.symbol] = {t: r.t, c: r.c}; }
+
+function saveCache() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: S.updated, quotes: S.quotes, daily: S.daily, weekly: S.weekly})); } catch (e) { /* storage full or blocked */ }
+}
+function loadCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (!c || !c.quotes || !Object.keys(c.quotes).length) return false;
+    S.quotes = c.quotes; S.daily = c.daily || {}; S.weekly = c.weekly || {}; S.cacheTime = c.at || 0; return true;
+  } catch (e) { return false; }
+}
+
+/* ───────── demo data (clearly labelled simulation, used only when no live or cached data is available) ───────── */
+function hash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+let DEMO = null;
+function buildDemo() {
+  const N = 262, M = 78, dayKey = Math.floor(Date.now() / 864e5);
+  if (DEMO && DEMO.dayKey === dayKey) return DEMO;
+  const series = (key, sd, drift) => { const r = rng(hash(key)), a = []; for (let i = 0; i < N; i++) a.push(gauss(r) * sd + (drift || 0)); a.push(gauss(rng(hash(key + dayKey))) * sd); return a; };
+  const mkt = series('mkt', 0.008, 0.0003), sec = {};
+  SECTORS.forEach(s => sec[s.id] = series('sec' + s.id, 0.004));
+  const base = {'^GSPC':7500, '^DJI':48000, '^IXIC':25000, '^RUT':2600, '^VIX':17};
+  const out = {dayKey, M, sym:{}};
+  const now = Math.floor(Date.now() / 1000), open = now - 3 * 3600;
+  for (const sym of ALL_SYMBOLS) {
+    const info = INFO[sym], r = rng(hash(sym)), rt = rng(hash(sym + dayKey));
+    const kind = info.kind;
+    const beta = kind === 'stock' ? 0.6 + r() * 0.9 : sym === '^VIX' ? 0 : sym === '^IXIC' ? 1.2 : sym === '^RUT' ? 1.15 : 1;
+    const idio = kind === 'stock' ? 0.007 + r() * 0.013 : sym === '^VIX' ? 0.03 : 0.0015;
+    const drift = kind === 'stock' ? (r() - 0.5) * 0.0012 : 0;
+    const p0 = base[sym] || (kind === 'etf' ? 40 + r() * 180 : 35 + Math.pow(r(), 2) * 700);
+    const secv = info.sector ? sec[info.sector.id] : null;
+    const rets = [];
+    for (let d = 0; d <= N; d++) rets.push(beta * mkt[d] + (secv ? secv[d] : 0) + idio * gauss(d < N ? r : rt) + drift);
+    if (kind === 'stock' && rt() < 0.14) rets[N] += (rt() < 0.5 ? -1 : 1) * (0.03 + rt() * 0.045);   // a few outsized movers each day
+    const c = [], t = []; let p = p0;
+    for (let d = 0; d < N; d++) { p *= Math.exp(rets[d]); c.push(+p.toFixed(2)); t.push(open - (N - d) * 86400); }
+    if (sym === '^VIX') {   // fear gauge: mean-reverting, moves against the market
+      const lvl = d => { let m5 = 0; for (let j = Math.max(0, d - 4); j <= d; j++) m5 += mkt[j]; return 17 * Math.exp(-9 * m5); };
+      for (let d = 0; d < N; d++) c[d] = +(lvl(d) * Math.exp(rets[d] * 0.5)).toFixed(2);
+      rets[N] = Math.log(lvl(N) / c[N - 1]) + rets[N] * 0.5;
+    }
+    const prev = c[N - 1], path = []; let w = 0; const steps = [];
+    for (let j = 0; j < M; j++) { w += gauss(rt) * idio * 1.1 / Math.sqrt(M); steps.push(w); }
+    for (let j = 0; j < M; j++) { const f = (j + 1) / M; path.push(+(prev * Math.exp(rets[N] * f + steps[j] - f * steps[M - 1])).toFixed(2)); }
+    out.sym[sym] = {c, t, prev, path, vol: Math.round((2 + r() * 60) * 1e6)};
+  }
+  return (DEMO = out);
+}
+function demoSpark(range) {
+  const D = buildDemo(), now = Math.floor(Date.now() / 1000), open = now - 3 * 3600;
+  const k = 18 + Math.floor(Date.now() / 5000) % (D.M - 18);
+  return (range === '2y' ? LONG_SYMBOLS : ALL_SYMBOLS).map(sym => {
+    const d = D.sym[sym];
+    if (range === '2y') {   // 104 weekly closes ending at the latest daily close
+      const r = rng(hash('wk' + sym)), sd = INFO[sym].kind === 'index' ? 0.018 : 0.026, w = [d.prev], t = [now];
+      for (let i = 1; i < 104; i++) { w.unshift(+(w[0] / Math.exp(gauss(r) * sd + 0.0015)).toFixed(2)); t.unshift(now - i * 604800); }
+      return {symbol: sym, response: [{meta: {symbol: sym, regularMarketTime: now, gmtoffset: -18000}, timestamp: t, indicators: {quote: [{close: w}]}}]};
+    }
+    if (range !== '1d') return {symbol: sym, response: [{meta: {symbol: sym, regularMarketTime: now, gmtoffset: -18000}, timestamp: d.t, indicators: {quote: [{close: d.c}]}}]};
+    const seen = d.path.slice(0, k + 1), yr = d.c.concat(seen);
+    return {symbol: sym, response: [{
+      meta: {symbol: sym, regularMarketPrice: seen[k], previousClose: d.prev, chartPreviousClose: d.prev,
+        regularMarketDayHigh: Math.max.apply(null, seen), regularMarketDayLow: Math.min.apply(null, seen),
+        regularMarketVolume: INFO[sym].kind === 'index' ? null : Math.round(d.vol * (k + 1) / D.M),
+        fiftyTwoWeekHigh: Math.max.apply(null, yr), fiftyTwoWeekLow: Math.min.apply(null, yr),
+        regularMarketTime: now, gmtoffset: -18000,
+        currentTradingPeriod: {pre: {start: open - 19800, end: open}, regular: {start: open, end: open + 23400}, post: {start: open + 23400, end: open + 37800}}},
+      timestamp: seen.map((_, i) => open + i * 300), indicators: {quote: [{close: seen}]},
+    }]};
+  });
+}
+
+/* ───────── refresh loop ───────── */
+async function refresh(manual) {
+  if (S.loading) return;
+  S.loading = true; clearTimeout(S.timer);
+  let failed = false;
+  try {
+    if (FORCE_DEMO) throw new Error('Demo mode requested');
+    const needDaily = !S.dailyAt || Date.now() - S.dailyAt > 30 * 60e3 || S.source !== 'live';
+    const [intra, daily, weekly] = await Promise.all([
+      fetchSpark(ALL_SYMBOLS, '1d', '5m'),
+      needDaily ? fetchSpark(ALL_SYMBOLS, '1y', '1d').catch(e => null) : Promise.resolve(null),
+      needDaily ? fetchSpark(LONG_SYMBOLS, '2y', '1wk').catch(e => null) : Promise.resolve(null),
+    ]);
+    if (S.source !== 'live') { S.quotes = {}; if (daily || S.source !== 'cache') { S.daily = {}; S.dailyAt = 0; } if (S.source !== 'cache') S.weekly = {}; }   // never mix simulated history with real prices
+    applyIntraday(intra);
+    if (daily) { applyDaily(daily); S.dailyAt = Date.now(); }
+    if (weekly) applyWeekly(weekly);
+    S.source = 'live'; S.updated = Date.now(); S.lastError = '';
+    if (daily || Date.now() - S.cacheTime > 5 * 60e3) { saveCache(); S.cacheTime = Date.now(); }
+  } catch (e) {
+    failed = true;
+    S.lastError = FORCE_DEMO ? '' : (location.protocol === 'file:' ? 'Opened as a file, so there is no local server to fetch prices.' : 'Could not reach the price feed (' + (e && e.message || e) + ').');
+    if (S.source === 'live') { S.source = 'cache'; S.cacheTime = S.updated; }
+    else if (S.source === 'none' && !FORCE_DEMO && loadCache()) { S.source = 'cache'; }
+    else if (S.source === 'none' || S.source === 'demo') {
+      S.quotes = {}; S.daily = {};
+      applyIntraday(parseSpark({spark: {result: demoSpark('1d')}}));
+      applyDaily(parseSpark({spark: {result: demoSpark('1y')}}));
+      applyWeekly(parseSpark({spark: {result: demoSpark('2y')}}));
+      S.source = 'demo'; S.updated = Date.now();
+    }
+  }
+  S.loading = false;
+  try { compute(); render(); } catch (e) { console.error(e); S.lastError = 'Display error: ' + e.message; }
+  const b = $('#boot'); if (b) b.remove();
+  const st = marketState().key;
+  const wait = S.source === 'demo' ? (FORCE_DEMO ? 5e3 : 30e3) : failed ? 30e3 : st === 'open' ? 60e3 : (st === 'pre' || st === 'post') ? 120e3 : 600e3;
+  S.nextAt = Date.now() + wait;
+  S.timer = setTimeout(refresh, wait);
+}
+
+/* ───────── statistics ───────── */
+const dayOf = (ts, gmt) => Math.floor((ts + (gmt || 0)) / 86400);
+function computeStats(sym) {
+  const q = S.quotes[sym]; if (!q || !(q.price > 0)) return null;
+  const d = S.daily[sym]; let hist = d ? d.c.slice() : [], ht = d ? d.t.slice() : [];
+  if (ht.length && dayOf(ht[ht.length - 1], q.gmt) >= dayOf(q.time, q.gmt)) { hist.pop(); ht.pop(); }   // drop the bar for the session in progress
+  const prev = q.prev > 0 ? q.prev : hist[hist.length - 1];
+  const info = INFO[sym] || {name: sym, sector: null, kind: 'stock'};
+  const st = {sym, name: info.name, sector: info.sector, kind: info.kind, price: q.price, prev, chg: prev ? q.price / prev - 1 : null,
+    hi: q.hi, lo: q.lo, vol: q.vol, time: q.time};
+  const series = hist.concat([q.price]); st.series = series; st.seriesT = ht.concat([q.time]);
+  const rets = []; for (let i = 1; i < hist.length; i++) rets.push(Math.log(hist[i] / hist[i - 1]));
+  st.sigma = rets.length >= 10 ? stdev(rets.slice(-30)) : null;
+  st.volAnn = st.sigma ? st.sigma * Math.sqrt(252) : null;
+  st.z = st.sigma && ok(st.chg) ? st.chg / st.sigma : null;
+  const back = n => series.length > n ? q.price / series[series.length - 1 - n] - 1 : null;
+  st.ret5 = back(5); st.ret21 = back(21); st.ret63 = back(63); st.ret126 = back(126); st.ret252 = series.length > 200 ? q.price / series[0] - 1 : null;
+  st.ma20 = sma(series, 20); st.ma50 = sma(series, 50); st.ma200 = sma(series, 200);
+  st.rsi = rsi14(series);
+  const hs = series.length > 1 ? Math.max.apply(null, series) : null, ls = series.length > 1 ? Math.min.apply(null, series) : null;
+  st.hi52 = Math.max(ok(q.hi52) ? q.hi52 : -Infinity, ok(hs) ? hs : -Infinity, q.price);
+  st.lo52 = Math.min(ok(q.lo52) ? q.lo52 : Infinity, ok(ls) ? ls : Infinity, q.price);
+  st.pos52 = st.hi52 > st.lo52 ? (q.price - st.lo52) / (st.hi52 - st.lo52) : null;
+  st.offHigh = st.hi52 > 0 ? q.price / st.hi52 - 1 : null;
+  let streak = 0;
+  for (let i = series.length - 1; i > 0; i--) { const s = Math.sign(series[i] - series[i - 1]); if (!s) break; if (!streak) streak = s; else if (Math.sign(streak) !== s) break; else streak += s; }
+  st.streak = streak;
+  st.rets = rets.concat(ok(st.chg) && prev ? [Math.log(q.price / prev)] : []);
+  return st;
+}
+function compute() {
+  S.stats = {};
+  for (const sym of ALL_SYMBOLS) { const st = computeStats(sym); if (st) S.stats[sym] = st; }
+  const mk = S.stats['^GSPC'];
+  for (const sym in S.stats) {     // beta vs the S&P 500 over ~60 sessions
+    const st = S.stats[sym];
+    if (!mk || sym === '^GSPC' || st.rets.length < 30 || mk.rets.length < 30) continue;
+    const n = Math.min(60, st.rets.length, mk.rets.length), a = st.rets.slice(-n), b = mk.rets.slice(-n);
+    const ma = mean(a), mb = mean(b); let cov = 0, vb = 0;
+    for (let i = 0; i < n; i++) { cov += (a[i] - ma) * (b[i] - mb); vb += (b[i] - mb) * (b[i] - mb); }
+    st.beta = vb > 0 ? cov / vb : null;
+    st.chgAdj = ok(st.beta) && ok(mk.chg) && ok(st.chg) ? st.chg - st.beta * mk.chg : null;
+  }
+  S.pred = {};
+  for (const sym in S.stats) if (INFO[sym] && INFO[sym].kind !== 'index') S.pred[sym] = predict(S.stats[sym]);
+  S.market = marketRead();
+  S.outlook = sectorOutlook();
+}
+const stockStats = () => UNIVERSE.map(u => S.stats[u.sym]).filter(st => st && ok(st.chg));
+
+/* ───────── the "lean" model: transparent rules, each producing an argument for one side ───────── */
+function finishRead(signals, extra) {
+  let ws = 0, tot = 0;
+  signals.forEach(s => { s.score = clamp(s.score, -1, 1); ws += s.weight; tot += s.score * s.weight; });
+  const score = ws ? tot / ws : 0;
+  const dir = score > 0.12 ? 1 : score < -0.12 ? -1 : 0;
+  const a = Math.abs(score);
+  const conviction = !dir ? 'No clear edge' : a < 0.3 ? 'Low conviction' : a < 0.5 ? 'Moderate conviction' : 'Stronger than usual';
+  const pUp = Math.round(50 + 22 * score);
+  const live = signals.filter(s => s.arg && Math.abs(s.score) >= 0.08).sort((x, y) => Math.abs(y.score * y.weight) - Math.abs(x.score * x.weight));
+  const bull = live.filter(s => s.score > 0).map(s => s.arg), bear = live.filter(s => s.score < 0).map(s => s.arg);
+  return Object.assign({score, dir, conviction, pUp, signals, bull, bear}, extra || {});
+}
+function predict(st) {
+  if (!st.sigma) return null;   // no price history yet, so no read
+  const sig = [], add = (name, score, weight, reading, arg) => sig.push({name, score, weight, reading, arg});
+  const mk = S.stats['^GSPC'], sec = st.sector && st.kind === 'stock' ? S.stats[st.sector.etf] : null;
+  const p = x => Math.abs(x * 100).toFixed(1) + '%';
+  // 1. trend
+  if (ok(st.ma50)) {
+    const above = st.price > st.ma50, has200 = ok(st.ma200), golden = has200 && st.ma50 > st.ma200;
+    const s = (above ? 0.5 : -0.5) + (has200 ? (golden ? 0.5 : -0.5) : 0);
+    const reading = `${p(st.price / st.ma50 - 1)} ${above ? 'above' : 'below'} 50-day${has200 ? `; 50-day ${golden ? 'above' : 'below'} 200-day` : ''}`;
+    const arg = s > 0 ? `The trend is up: price is ${p(st.price / st.ma50 - 1)} above its 50-day average${has200 ? ' and the 50-day sits above the 200-day' : ''}. Dips in established uptrends tend to get bought.`
+              : s < 0 ? `The trend is down: price is ${p(st.price / st.ma50 - 1)} below its 50-day average${has200 ? ' and the 50-day sits below the 200-day' : ''}. Rallies inside downtrends tend to fade.` : '';
+    add('Trend', s, 0.22, reading, arg);
+  }
+  // 2. one-month momentum
+  if (ok(st.ret21) && st.sigma) {
+    const m = st.ret21 / (st.sigma * Math.sqrt(21));
+    add('1-month momentum', m / 2, 0.18, `${fmtPct(st.ret21, 1)} over 21 sessions`,
+      m > 0 ? `One-month momentum is positive (${fmtPct(st.ret21, 1)}). Recent winners tend to keep outperforming over the following weeks.`
+            : `One-month momentum is negative (${fmtPct(st.ret21, 1)}). Recent losers tend to keep lagging.`);
+  }
+  // 3. overbought / oversold
+  if (ok(st.rsi)) {
+    const r = st.rsi; let s = 0, arg = '';
+    if (r >= 70) { s = -(0.3 + (r - 70) / 15); arg = `RSI is ${r.toFixed(0)}, which is overbought. Stretched rallies often pause or pull back as buyers run out.`; }
+    else if (r <= 30) { s = 0.3 + (30 - r) / 15; arg = `RSI is ${r.toFixed(0)}, which is oversold. Selling pressure tends to exhaust itself at these levels and bounces are common.`; }
+    add('Overbought / oversold', s, 0.22, `RSI ${r.toFixed(0)}${r >= 70 ? ' (overbought)' : r <= 30 ? ' (oversold)' : ' (neutral)'}`, arg);
+  }
+  // 4. size of the latest move (short-term reversal)
+  if (ok(st.z)) {
+    const z = st.z, az = Math.abs(z); let s = 0, arg = '';
+    if (az >= 1.5) {
+      s = -Math.sign(z) * Math.min(1, 0.3 + (az - 1.5) / 2);
+      arg = z > 0 ? `The latest move (${fmtPct(st.chg)}) was ${az.toFixed(1)} times a typical day for this name. Part of an outsized jump is often given back over the next few sessions.`
+                  : `The latest move (${fmtPct(st.chg)}) was ${az.toFixed(1)} times a typical day for this name. Outsized drops often see at least a partial rebound as dip-buyers step in.`;
+    }
+    add('Size of latest move', s, 0.20, `${z >= 0 ? '+' : '−'}${az.toFixed(1)}σ`, arg);
+  }
+  // 5. sector tailwind
+  if (sec && ok(sec.ret5) && sec.sigma) {
+    const m = sec.ret5 / (sec.sigma * Math.sqrt(5));
+    add('Sector backdrop', m / 2, 0.10, `${st.sector.etf} ${fmtPct(sec.ret5, 1)} in 5 sessions`,
+      m > 0 ? `${st.sector.name} is strong this week (${st.sector.etf} ${fmtPct(sec.ret5, 1)} over five sessions), a tailwind for the whole group.`
+            : `${st.sector.name} is weak this week (${st.sector.etf} ${fmtPct(sec.ret5, 1)} over five sessions), a headwind for the whole group.`);
+  }
+  // 6. market regime
+  if (mk && ok(mk.ma50)) {
+    const above = mk.price > mk.ma50, wk = ok(mk.ret5) ? mk.ret5 : 0, s = (above ? 0.5 : -0.5) + (wk > 0 ? 0.5 : -0.5);
+    add('Market backdrop', s, 0.08, `S&P ${above ? 'above' : 'below'} 50-day, ${fmtPct(wk, 1)} this week`,
+      s > 0 ? `The broad market is supportive: the S&P 500 is above its 50-day average and up ${p(wk)} over the past week.`
+            : s < 0 ? `The broad market is shaky: the S&P 500 is below its 50-day average and down ${p(wk)} over the past week.` : '');
+  }
+  const res = finishRead(sig);
+  const dir = res.dir, sg = st.sigma || 0.015;
+  res.band = {lo: st.price * (1 - sg), hi: st.price * (1 + sg), pct: sg, wlo: st.price * (1 - sg * Math.sqrt(5)), whi: st.price * (1 + sg * Math.sqrt(5))};
+  // counterpoints: the opposing signals first, then structural objections
+  const con = (dir > 0 ? res.bear : dir < 0 ? res.bull : []).slice();
+  const z = st.z || 0, az = Math.abs(z);
+  if (az >= 2) {
+    con.push(`A ${az.toFixed(1)}σ move nearly always has a catalyst (earnings, guidance, an analyst call, news) that this price-only model cannot see. ` +
+      (dir && Math.sign(z) === dir ? 'If that news is already fully priced in, the move can stall or reverse quickly.' : 'News-driven moves often keep drifting the same way for days' + (dir ? ', which would run straight against this call.' : '.')));
+  }
+  if (ok(st.pos52)) {
+    if (st.pos52 >= 0.97 && dir > 0) con.push(`It is trading within ${p(st.offHigh)} of its 52-week high, a level where profit-taking often caps gains.`);
+    if (st.pos52 >= 0.97 && dir < 0) con.push('It sits at or near a 52-week high. Betting against stocks at new highs has a poor record, because strength tends to persist.');
+    if (st.pos52 <= 0.05 && dir > 0) con.push('It is near its 52-week low. Cheap can get cheaper, and bottoms are only obvious in hindsight.');
+    if (st.pos52 <= 0.05 && dir < 0) con.push(`It is already ${p(st.offHigh)} below its 52-week high. Much of the bad news may be priced in, and crowded shorts can snap back hard.`);
+  }
+  if (ok(st.beta) && st.beta >= 1.4 && st.kind === 'stock') con.push(`With a beta of ${st.beta.toFixed(1)}, a broad market swing would likely overwhelm these stock-specific signals.`);
+  if (dir && !(dir > 0 ? res.bear : res.bull).length) con.push('Every signal the model tracks points the same way. One-sided setups are often crowded, and crowded trades unwind sharply.');
+  con.push(dir ? `The edge is thin. The model leans ${Math.max(res.pUp, 100 - res.pUp)}/${Math.min(res.pUp, 100 - res.pUp)}, barely better than a coin flip, while this name typically moves ±${p(sg)} a day. Any single session is mostly noise.`
+               : `Signals roughly cancel out, and a typical day moves this name ±${p(sg)} either way. "No edge" is itself the finding here.`);
+  res.why = dir > 0 ? res.bull : dir < 0 ? res.bear : [];
+  res.con = con;
+  res.flip = dir > 0 ? (ok(st.ma50) && st.price > st.ma50 ? `a close below the 50-day average (${fmtP(st.ma50)}) would break the trend argument.` : `a drop below the latest session low (${fmtP(st.lo)}) would undercut the rebound thesis.`)
+           : dir < 0 ? (ok(st.ma50) && st.price < st.ma50 ? `a close back above the 50-day average (${fmtP(st.ma50)}) would break the bearish read.` : `a push above the latest session high (${fmtP(st.hi)}) would undercut it.`)
+           : `a close outside ${fmtP(res.band.lo)} to ${fmtP(res.band.hi)} (the typical one-day range) would tip the balance.`;
+  return res;
+}
+function marketRead() {
+  const mk = S.stats['^GSPC'], vix = S.stats['^VIX'], stocks = stockStats();
+  if (!stocks.length) return null;
+  const sig = [], add = (name, score, weight, reading, arg) => sig.push({name, score, weight, reading, arg});
+  const adv = stocks.filter(s => s.chg > 0.00005).length, dec = stocks.filter(s => s.chg < -0.00005).length, n = stocks.length;
+  const p = x => Math.abs(x * 100).toFixed(1) + '%';
+  const b = n ? (adv - dec) / n : 0;
+  add('Breadth', b * 1.5, 0.25, `${adv} up, ${dec} down`, b > 0 ? `Breadth is positive: ${adv} of ${n} watched stocks rose in the latest session. Broad participation tends to carry over.` : `Breadth is negative: ${dec} of ${n} watched stocks fell in the latest session. Broad selling tends to carry over.`);
+  if (mk && ok(mk.ma50)) {
+    const above = mk.price > mk.ma50, golden = ok(mk.ma200) && mk.ma50 > mk.ma200, s = (above ? 0.5 : -0.5) + (ok(mk.ma200) ? (golden ? 0.5 : -0.5) : 0);
+    add('Index trend', s, 0.25, `S&P ${p(mk.price / mk.ma50 - 1)} ${above ? 'above' : 'below'} 50-day`, s > 0 ? `The S&P 500 is in an uptrend, ${p(mk.price / mk.ma50 - 1)} above its 50-day average.` : s < 0 ? `The S&P 500 is in a downtrend, ${p(mk.price / mk.ma50 - 1)} below its 50-day average.` : '');
+  }
+  if (mk && ok(mk.rsi) && (mk.rsi >= 70 || mk.rsi <= 30)) {
+    const ob = mk.rsi >= 70;
+    add('Index stretch', ob ? -0.7 : 0.7, 0.12, `S&P RSI ${mk.rsi.toFixed(0)}`, ob ? `The S&P 500's RSI is ${mk.rsi.toFixed(0)} (overbought). Indexes this stretched often consolidate.` : `The S&P 500's RSI is ${mk.rsi.toFixed(0)} (oversold). Relief rallies are common from here.`);
+  }
+  if (vix && ok(vix.chg)) {
+    const lvl = vix.price, s = clamp(-vix.chg * 5, -1, 1) + (lvl >= 25 ? -0.4 : 0);
+    add('Volatility (VIX)', s, 0.16, `VIX ${lvl.toFixed(1)}, ${fmtPct(vix.chg, 1)}`, s > 0 ? `Fear is easing: the VIX fell ${p(vix.chg)} to ${lvl.toFixed(1)}.` : `Fear is rising: the VIX is at ${lvl.toFixed(1)}${vix.chg > 0 ? `, up ${p(vix.chg)}` : ''}. Rising volatility usually means wider swings and weaker follow-through on rallies.`);
+  }
+  const avgOf = style => { const v = SECTORS.filter(s => s.style === style).map(s => S.stats[s.etf]).filter(x => x && ok(x.chg)).map(x => x.chg); return v.length ? mean(v) : null; };
+  const cyc = avgOf('cyclical'), def = avgOf('defensive');
+  if (ok(cyc) && ok(def)) {
+    const spread = cyc - def;
+    add('Sector rotation', spread / 0.008, 0.22, `Cyclicals ${fmtPct(spread, 2)} vs defensives`, spread > 0 ? `Money is rotating toward risk: cyclical sectors beat defensive ones by ${p(spread)} in the latest session.` : `Money is rotating toward safety: defensive sectors beat cyclical ones by ${p(spread)} in the latest session.`);
+  }
+  const res = finishRead(sig, {adv, dec, n, cyc, def});
+  const dir = res.dir, con = (dir > 0 ? res.bear : dir < 0 ? res.bull : []).slice();
+  if (dir > 0 && vix && vix.price < 14) con.push(`The VIX at ${vix.price.toFixed(1)} signals complacency. Calm regimes tend to end abruptly, not gradually.`);
+  if (dir < 0 && vix && vix.price >= 30) con.push(`The VIX at ${vix.price.toFixed(1)} is panic territory, and extremes in fear have often marked short-term lows.`);
+  if (mk && ok(mk.chg) && mk.chg > 0 && adv < dec) con.push('The index rose while most watched stocks fell. Narrow leadership makes index gains fragile.');
+  if (mk && ok(mk.chg) && mk.chg < 0 && adv > dec) con.push('The index fell while most watched stocks rose. Weakness concentrated in a few heavyweights is less worrying than broad selling.');
+  if (dir && !(dir > 0 ? res.bear : res.bull).length) con.push('Every market signal points the same way. When positioning gets this one-sided, small disappointments cause outsized reversals.');
+  con.push('This read covers about ' + n + ' large caps and cannot see scheduled event risk (Fed decisions, inflation data, earnings, geopolitics), any of which can override it in minutes.');
+  res.why = dir > 0 ? res.bull : dir < 0 ? res.bear : [];
+  res.con = con;
+  res.label = dir > 0 ? 'Risk-on lean' : dir < 0 ? 'Risk-off lean' : 'Mixed, no clear lean';
+  res.flip = mk && ok(mk.ma50) ? (dir >= 0 ? `an S&P 500 close below its 50-day average (${fmtP(mk.ma50)}) would weaken the constructive case.` : `an S&P 500 close back above its 50-day average (${fmtP(mk.ma50)}) would weaken the cautious case.`) : '';
+  return res;
+}
+
+/* ───────── sector outlook: which sectors look set to beat or trail the S&P 500 over three horizons ───────── */
+const HORIZONS = [
+  {id:'short', name:'Short term', span:'next 1 to 2 weeks', caveats:[
+    'One earnings report, rate move, or headline can reorder the sectors within a day. One- to two-week calls are the noisiest on this page.',
+    'Sector ETFs are dominated by a few giants, so a single stock can decide the outcome regardless of what the sector "should" do.']},
+  {id:'medium', name:'Medium term', span:'next 1 to 3 months', caveats:[
+    'Momentum fails hardest at turning points. When the market reverses, the recent leaders usually fall the most.',
+    'The things that drive sectors over months (interest rates, oil, earnings revisions, policy) are invisible to a price-only model.']},
+  {id:'long', name:'Long term', span:'next 6 to 12 months', caveats:[
+    'One to two years of prices is thin evidence. Long-run sector returns come from earnings, valuations and regulation, none of which this model sees.',
+    'The two main long-term signals here (12-month momentum and 2-year reversal) pull in opposite directions by design. When they disagree, the read is weak.']},
+];
+function sectorOutlook() {
+  const mk = S.stats['^GSPC'], vix = S.stats['^VIX'];
+  const rows = SECTORS.map(sec => ({sec, e: S.stats[sec.etf]})).filter(r => r.e && r.e.sigma);
+  if (!mk || rows.length < 6) return null;
+  const stocks = stockStats();
+  const pts = x => Math.abs(x * 100).toFixed(1) + ' points';
+  const rel = k => rows.map(r => ok(r.e[k]) && ok(mk[k]) ? r.e[k] - mk[k] : null);
+  // cross-sectional score in [-1, 1]: how far a sector sits from the average sector
+  const cs = vals => { const v = vals.filter(ok); if (v.length < 4) return vals.map(() => null); const m = mean(v), sd = stdev(v) || 1e-9; return vals.map(x => ok(x) ? clamp((x - m) / sd, -2, 2) / 2 : null); };
+  const relChg = rel('chg'), rel21 = rel('ret21'), rel63 = rel('ret63'), rel126 = rel('ret126'), rel252 = rel('ret252');
+  const wk = sym => { const w = S.weekly[sym]; return w && w.c.length >= 80 ? w.c[0] : null; };
+  const mk2 = wk('^GSPC');
+  const rel2y = rows.map(r => { const b = wk(r.sec.etf); return b && mk2 ? (r.e.price / b - 1) - (mk.price / mk2 - 1) : null; });
+  const breadth = rows.map(r => { const m = stocks.filter(s => s.sector === r.sec && ok(s.ma20)); return m.length ? {n: m.length, up: m.filter(s => s.price > s.ma20).length} : null; });
+  const riskOff = (ok(mk.ma50) && mk.price < mk.ma50) || (vix && vix.price >= 25);
+  const riskOn = ok(mk.ma50) && mk.price > mk.ma50 && (!vix || vix.price < 20);
+  // relative strength is scored against a typical spread between sectors for that window, so the sign always matches the wording
+  const sc = (vals, typical) => vals.map(x => ok(x) ? clamp(x / typical, -1, 1) : null);
+  const z21 = sc(rel21, 0.05), z63 = sc(rel63, 0.08), z126 = sc(rel126, 0.12), z252 = sc(rel252, 0.18), z2y = sc(rel2y, 0.30);
+  const zVol = cs(rows.map(r => r.e.volAnn));
+  const vsMkt = (x, span) => `${x >= 0 ? 'beaten' : 'trailed'} the S&P 500 by ${pts(x)} over ${span}`;
+  const build = h => rows.map((r, i) => {
+    const e = r.e, sig = [];
+    const add = (name, score, weight, reading, pos, neg) => { if (ok(score)) sig.push({name, score, weight, reading, arg: Math.abs(score) < 0.08 ? '' : score > 0 ? pos : neg}); };
+    if (h === 'short') {
+      if (ok(rel21[i])) add('1-month relative strength', z21[i], 0.35, fmtPct(rel21[i], 1) + ' vs S&P', `It has ${vsMkt(rel21[i], 'the past month')}. Sector leadership tends to persist for a few weeks.`, `It has ${vsMkt(rel21[i], 'the past month')}. Sector laggards tend to keep lagging for a few weeks.`);
+      if (ok(e.rsi)) add('Overbought / oversold', e.rsi >= 70 ? -(0.3 + (e.rsi - 70) / 15) : e.rsi <= 30 ? 0.3 + (30 - e.rsi) / 15 : 0, 0.25, 'RSI ' + e.rsi.toFixed(0), `The sector ETF's RSI is ${e.rsi.toFixed(0)} (oversold), and selling this heavy usually pauses.`, `The sector ETF's RSI is ${e.rsi.toFixed(0)} (overbought), which often comes before a pause.`);
+      if (breadth[i]) add('Breadth', (breadth[i].up / breadth[i].n - 0.5) * 2, 0.20, `${breadth[i].up} of ${breadth[i].n} above 20-day`, `${breadth[i].up} of its ${breadth[i].n} watched stocks are above their 20-day average, so strength is broad.`, `Only ${breadth[i].up} of its ${breadth[i].n} watched stocks are above their 20-day average, so weakness is broad.`);
+      if (ok(relChg[i]) && e.sigma) { const z = relChg[i] / e.sigma; add('Latest session', Math.abs(z) >= 1.2 ? -Math.sign(z) * Math.min(1, 0.3 + (Math.abs(z) - 1.2) / 2) : 0, 0.20, fmtPct(relChg[i]) + ' vs S&P', `It fell ${pts(relChg[i])} more than the market in the latest session. Outsized one-day gaps like that often partly close.`, `It beat the market by ${pts(relChg[i])} in the latest session. Outsized one-day gaps like that often partly close.`); }
+    } else if (h === 'medium') {
+      if (ok(rel63[i])) add('3-month relative strength', z63[i], 0.35, fmtPct(rel63[i], 1) + ' vs S&P', `It has ${vsMkt(rel63[i], 'three months')}. Sector momentum over a few months is one of the more persistent patterns in markets.`, `It has ${vsMkt(rel63[i], 'three months')}. Sector weakness over a few months tends to persist.`);
+      if (ok(rel126[i])) add('6-month relative strength', z126[i], 0.25, fmtPct(rel126[i], 1) + ' vs S&P', `It has ${vsMkt(rel126[i], 'six months')}, so the strength is more than a recent blip.`, `It has ${vsMkt(rel126[i], 'six months')}, so the weakness is more than a recent blip.`);
+      if (ok(e.ma50)) { const up = e.price > e.ma50, gold = ok(e.ma200) && e.ma50 > e.ma200; add('Trend', (up ? 0.5 : -0.5) + (ok(e.ma200) ? (gold ? 0.5 : -0.5) : 0), 0.25, `${up ? 'above' : 'below'} 50-day`, 'The sector ETF is above its 50-day average, and the 50-day is above the 200-day.', 'The sector ETF is below its 50-day average, and the 50-day is below the 200-day.'); }
+      if (riskOff || riskOn) { const def = r.sec.style === 'defensive'; add('Market regime', riskOff ? (def ? 0.6 : -0.6) : (def ? -0.4 : 0.4), 0.15, riskOff ? 'risk-off' : 'risk-on',
+        riskOff ? `The market looks risk-off (S&P 500 below its 50-day average${vix ? ', VIX ' + vix.price.toFixed(0) : ''}), a backdrop that has favored defensive sectors like this one.` : 'The market looks risk-on (S&P 500 above its 50-day average, calm VIX), a backdrop that has favored cyclical sectors like this one.',
+        riskOff ? `The market looks risk-off (S&P 500 below its 50-day average${vix ? ', VIX ' + vix.price.toFixed(0) : ''}), a backdrop that has weighed on cyclical sectors like this one.` : 'The market looks risk-on, a backdrop in which defensive sectors like this one usually lag.'); }
+    } else {
+      if (ok(rel252[i])) add('12-month relative strength', z252[i], 0.30, fmtPct(rel252[i], 1) + ' vs S&P', `It has ${vsMkt(rel252[i], 'twelve months')}. Year-long leaders have tended to stay ahead.`, `It has ${vsMkt(rel252[i], 'twelve months')}. Year-long laggards have tended to stay behind.`);
+      if (ok(rel2y[i])) add('2-year reversal', ok(z2y[i]) ? -z2y[i] : null, 0.25, fmtPct(rel2y[i], 1) + ' vs S&P over 2 years', `It has ${vsMkt(rel2y[i], 'two years')}. Long-run laggards tend to recover ground as expectations reset.`, `It has ${vsMkt(rel2y[i], 'two years')}. Multi-year leaders tend to give back relative gains as valuations stretch.`);
+      if (ok(e.offHigh)) add('Distance from 52-week high', e.offHigh > -0.03 ? 0.6 : e.offHigh < -0.12 ? -0.6 : 0, 0.20, fmtPct(e.offHigh, 1) + ' off high', `It is ${e.offHigh > -0.0005 ? 'at' : 'within ' + pts(e.offHigh) + ' of'} its 52-week high. Groups near their highs have tended to keep leading.`, `It sits ${pts(e.offHigh)} below its 52-week high, a sign of persistent selling.`);
+      if (ok(e.ma200)) add('200-day trend', e.price > e.ma200 ? 0.6 : -0.6, 0.15, `${fmtPct(e.price / e.ma200 - 1, 1)} vs 200-day`, 'It trades above its 200-day average, the simplest test of a long-term uptrend.', 'It trades below its 200-day average, the simplest test of a long-term downtrend.');
+      if (ok(e.volAnn)) add('Volatility', ok(zVol[i]) ? -zVol[i] : null, 0.10, (e.volAnn * 100).toFixed(0) + '% annualized', `It is one of the calmer sectors (${(e.volAnn * 100).toFixed(0)}% annualized volatility). Lower-volatility groups have historically held up well for the risk taken.`, `It is one of the most volatile sectors (${(e.volAnn * 100).toFixed(0)}% annualized). Extra volatility has historically not been rewarded with better long-run returns.`);
+    }
+    const res = finishRead(sig);
+    res.sec = r.sec; res.why = res.dir > 0 ? res.bull : res.dir < 0 ? res.bear : [];
+    res.con = (res.dir > 0 ? res.bear : res.dir < 0 ? res.bull : []).slice();
+    if (res.dir && !res.con.length) res.con.push('No signal in the model argues against this, which often means the view is already crowded and priced in.');
+    return res;
+  }).sort((a, b) => b.score - a.score);
+  const out = {};
+  HORIZONS.forEach(h => {
+    const all = build(h.id);
+    const spread = all.length ? all[0].score - all[all.length - 1].score : 0;
+    out[h.id] = {all, winners: all.filter(x => x.dir > 0).slice(0, 3), losers: all.filter(x => x.dir < 0).slice(-3).reverse(),
+      caveats: (spread < 0.5 ? ['The scores are tightly bunched right now, so this ranking is fragile and could reshuffle on small moves.'] : []).concat(h.caveats)};
+  });
+  return out;
+}
+
+/* ───────── market state ───────── */
+function marketState() {
+  if (S.source === 'demo') return {key:'demo', label:'Simulated session'};
+  const q = S.quotes['AAPL'] || S.quotes['MSFT'] || Object.values(S.quotes).find(x => x && x.period);
+  const p = q && q.period, now = Date.now() / 1000;
+  if (!p || !p.regular) return {key:'closed', label:'Market status unknown'};
+  if (now >= p.regular.start && now < p.regular.end) return {key:'open', label:'Market open'};
+  if (p.pre && now >= p.pre.start && now < p.pre.end) return {key:'pre', label:'Pre-market'};
+  if (p.post && now >= p.post.start && now < p.post.end) return {key:'post', label:'After hours'};
+  return {key:'closed', label:'Market closed'};
+}
+function sessionLabel() {
+  const ms = marketState();
+  if (ms.key === 'open' || ms.key === 'demo') return 'today';
+  const q = S.quotes['AAPL'] || Object.values(S.quotes)[0];
+  if (!q) return 'last session';
+  const d = new Date((q.time + q.gmt) * 1000);
+  return 'last session, ' + d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', timeZone:'UTC'});
+}
+function sourceBadge(short) {
+  const t = S.updated ? timeFmt(S.updated) : '';
+  if (S.source === 'live') return `<span class="badge live" title="Yahoo Finance, fetched through this app's local server. Quotes can lag a little."><b>●</b> Live${short ? '' : ' · Yahoo Finance'} · ${t}</span>`;
+  if (S.source === 'cache') return `<span class="badge warn" title="${esc(S.lastError)} Showing the last prices that loaded. Retrying automatically.">⚠ Saved prices from ${S.cacheTime ? new Date(S.cacheTime).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'earlier'}</span>`;
+  if (S.source === 'demo') return `<span class="badge warn demo" title="${esc(S.lastError)} These are made-up numbers so you can see how the app works.">⚠ DEMO${short ? '' : ' · simulated prices, not real'}</span>`;
+  return '';
+}
+const statusHtml = ms => `<span class="dot"></span>${esc(ms.label)}`;
+
+/* ───────── render: compact ticker ───────── */
+function tapeItem(st) { return `<button class="ti" data-sym="${esc(st.sym)}" title="${esc(st.name)}${st.sector ? ' · ' + esc(st.sector.name) : ''}"><b>${esc(st.sym.replace('^', ''))}</b><span class="p">${fmtP(st.price)}</span>${delta(st.chg)}</button>`; }
+function chipHtml(st) { return `<button class="chip" data-sym="${esc(st.sym)}" style="${heatStyle(st.chg)}" title="${esc(st.name)} · ${fmtP(st.price)}"><b>${esc(st.sym)}</b><span class="d">${fmtPct(st.chg)}</span></button>`; }
+function renderTicker() {
+  const ms = marketState(), stocks = stockStats();
+  const el = $('#t-status'); el.className = 'status ' + ms.key; el.innerHTML = statusHtml(ms);
+  $('#t-idx').innerHTML = INDICES.map(([sym, name]) => { const st = S.stats[sym]; return st ? `<button data-sym="${esc(sym)}"><span class="n">${esc(name)}</span><span class="num">${fmtP(st.price)}</span> ${delta(st.chg)}</button>` : ''; }).join('');
+  $('#t-meta').innerHTML = sourceBadge(true);
+  const items = stocks.map(tapeItem).join('');
+  const track = $('#tape-track');
+  track.innerHTML = items + `<span class="dup" aria-hidden="true" style="display:contents">${items}</span>`;
+  const half = track.scrollWidth / 2;
+  if (half > 0) { const dur = Math.round(half / 55); if (track.dataset.dur !== String(dur)) { track.style.animationDuration = dur + 's'; track.dataset.dur = dur; } }
+  $('#board').innerHTML = stocks.slice().sort((a, b) => b.chg - a.chg).map(st => `<button class="chip" data-sym="${esc(st.sym)}" style="${heatStyle(st.chg)}" title="${esc(st.name)}"><b>${esc(st.sym)}</b><span class="p">${fmtP(st.price)}</span>${delta(st.chg)}</button>`).join('');
+}
+
+/* ───────── render: analysis ───────── */
+function leanChip(pr) {
+  if (!pr) return '';
+  const k = pr.dir > 0 ? 'up' : pr.dir < 0 ? 'down' : 'flat';
+  return `<span class="lean ${k}" title="Speculative model lean for the next session: ${pr.pUp}/${100 - pr.pUp} up/down. Not a calibrated probability."><i>${ARW[k]}</i>${pr.dir ? pr.pUp + '/' + (100 - pr.pUp) : 'no edge'}</span>`;
+}
+const rangeBar = pos => ok(pos) ? `<span class="rb" title="Position in 52-week range: ${(pos * 100).toFixed(0)}%"><i style="left:${(clamp(pos, 0, 1) * 100).toFixed(0)}%"></i></span>` : '';
+function moverRow(st) {
+  const q = S.quotes[st.sym];
+  return `<tr data-sym="${esc(st.sym)}" tabindex="0"><td><span class="sym">${esc(st.sym)}</span> <span class="tag">${esc(st.sector.short)}</span><span class="nm">${esc(st.name)}</span></td><td class="num">${fmtP(st.price)}</td><td class="num">${delta(st.chg)}</td><td>${spark(q.c, st.prev, 72, 22)}</td><td class="num">${ok(st.z) ? Math.abs(st.z).toFixed(1) + 'σ' : '–'}</td><td class="num c5">${pctSpan(st.ret5, 1)}</td><td class="num">${ok(st.rsi) ? st.rsi.toFixed(0) : '–'}</td><td class="c52">${rangeBar(st.pos52)}</td><td class="l">${leanChip(S.pred[st.sym])}</td></tr>`;
+}
+const MOVER_HEAD = `<thead><tr><th>Stock and sector</th><th>Price</th><th>Change</th><th class="l">Session</th><th title="Size of the move in units of this stock's typical daily move (30-session standard deviation)">Vs. typical</th><th class="c5">5 days</th><th title="14-day Relative Strength Index. Above 70 is overbought, below 30 is oversold.">RSI</th><th class="c52 l" title="Where the price sits between its 52-week low and high">52-wk range</th><th class="l" title="Speculative model lean for the next session">Next lean</th></tr></thead>`;
+function moversCard(title, sub, rows, empty) {
+  return `<div class="card"><h2>${title} <span class="sub">${sub}</span></h2><table>${MOVER_HEAD}<tbody>${rows.length ? rows.map(moverRow).join('') : `<tr><td colspan="9" class="muted">${empty}</td></tr>`}</tbody></table></div>`;
+}
+function argsHtml(pr) {
+  const li = a => a.map(t => `<li>${esc(t)}</li>`).join('');
+  const why = pr.dir ? `<div class="pro"><h3>Why the model leans ${pr.dir > 0 ? 'up' : 'down'}</h3><ul>${li(pr.why)}</ul></div>`
+    : `<div class="pro"><h3>Case for up</h3><ul>${pr.bull.length ? li(pr.bull) : '<li>No bullish signal is active.</li>'}</ul><h3 style="margin-top:6px">Case for down</h3><ul>${pr.bear.length ? li(pr.bear) : '<li>No bearish signal is active.</li>'}</ul></div>`;
+  return `<div class="args">${why}<div class="con"><h3>Counterpoints</h3><ul>${li(pr.con)}</ul></div>${pr.flip ? `<div class="flip"><b>What would change this read:</b> ${esc(pr.flip)}</div>` : ''}</div>`;
+}
+function callHtml(pr, label, band) {
+  const k = pr.dir > 0 ? 'up' : pr.dir < 0 ? 'down' : 'flat';
+  return `<div class="call"><span class="pill ${k}"><i class="${k}">${ARW[k]}</i>${esc(label)}</span><span class="meta" title="A heuristic score, not a calibrated probability">${pr.dir ? `${pr.pUp}/${100 - pr.pUp} up/down · ` : ''}${esc(pr.conviction)}</span><span class="spec">speculative</span>${band ? `<span class="meta" title="One standard deviation of this stock's recent daily moves around the current price">Typical next-session range ${fmtP(band.lo)} to ${fmtP(band.hi)} (±${(band.pct * 100).toFixed(1)}%)</span>` : ''}</div>`;
+}
+function predCard(st) {
+  const pr = S.pred[st.sym]; if (!pr) return '';
+  const label = pr.dir > 0 ? 'Leans up next session' : pr.dir < 0 ? 'Leans down next session' : 'No clear edge';
+  return `<article class="pred"><div class="pred-h" data-sym="${esc(st.sym)}"><span class="sym">${esc(st.sym)}</span><span class="nm">${esc(st.name)}${st.sector ? ' · ' + esc(st.sector.name) : ''}</span><span class="mv">${fmtP(st.price)} ${delta(st.chg)}</span></div>${callHtml(pr, label, pr.band)}${argsHtml(pr)}</article>`;
+}
+function renderAnalysis() {
+  const ms = marketState(), stocks = stockStats(), sess = sessionLabel();
+  const el = $('#a-status'); el.className = 'status ' + ms.key; el.innerHTML = statusHtml(ms);
+  $('#a-idx').innerHTML = INDICES.map(([sym, name]) => { const st = S.stats[sym], q = S.quotes[sym]; return st ? `<button class="idx" data-sym="${esc(sym)}"><span class="idx-n">${esc(name)}</span><span class="idx-v">${fmtP(st.price)}</span><span class="idx-r">${delta(st.chg)}${spark(q.c, st.prev, 64, 18)}</span></button>` : ''; }).join('');
+  $('#a-src').innerHTML = sourceBadge(false);
+  $('#a-alert').innerHTML = S.source === 'demo' ? `<div class="notice err"><span>⚠</span><span><b>Demo mode: these prices are simulated, not real.</b> ${esc(S.lastError)} ${FORCE_DEMO ? '' : 'Start the app with its launcher to get live prices. It will switch to live data automatically when the feed is reachable.'}</span></div>`
+    : S.source === 'cache' ? `<div class="notice err"><span>⚠</span><span><b>Showing saved prices, not live ones.</b> ${esc(S.lastError)} Retrying automatically.</span></div>` : '';
+
+  // KPIs
+  const sorted = stocks.slice().sort((a, b) => b.chg - a.chg);
+  const adv = stocks.filter(s => s.chg > 0.00005).length, dec = stocks.filter(s => s.chg < -0.00005).length, flat = stocks.length - adv - dec;
+  const top = sorted[0], bot = sorted[sorted.length - 1];
+  const unusual = stocks.filter(s => ok(s.z)).sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+  const nearHi = stocks.filter(s => ok(s.pos52) && s.pos52 >= 0.97), nearLo = stocks.filter(s => ok(s.pos52) && s.pos52 <= 0.03);
+  const vix = S.stats['^VIX'], avg = stocks.length ? mean(stocks.map(s => s.chg)) : null, med = median(stocks.map(s => s.chg));
+  const kpi = (l, v, s, sym) => `<${sym ? 'button data-sym="' + esc(sym) + '"' : 'div'} class="kpi"><div class="k-l">${l}</div><div class="k-v">${v}</div><div class="k-s">${s}</div></${sym ? 'button' : 'div'}>`;
+  $('#a-kpis').innerHTML = [
+    `<div class="kpi"><div class="k-l">Breadth (${stocks.length} stocks)</div><div class="k-v">${adv} up · ${dec} down</div><div class="seg" role="img" aria-label="${adv} advancing, ${flat} flat, ${dec} declining"><i class="u" style="flex:${adv}"></i>${flat ? `<i class="f" style="flex:${flat}"></i>` : ''}<i class="dn" style="flex:${dec}"></i></div></div>`,
+    kpi('Average move', pctSpan(avg), `Median ${fmtPct(med)}`),
+    top ? kpi('Biggest gainer', `${esc(top.sym)} ${pctSpan(top.chg)}`, `${esc(top.name)} · ${esc(top.sector.short)}`, top.sym) : '',
+    bot ? kpi('Biggest loser', `${esc(bot.sym)} ${pctSpan(bot.chg)}`, `${esc(bot.name)} · ${esc(bot.sector.short)}`, bot.sym) : '',
+    unusual[0] ? kpi('Most unusual move', `${esc(unusual[0].sym)} ${Math.abs(unusual[0].z).toFixed(1)}σ`, `${fmtPct(unusual[0].chg)} vs a typical ±${(unusual[0].sigma * 100).toFixed(1)}% day`, unusual[0].sym) : '',
+    kpi('52-week extremes', `${nearHi.length} high · ${nearLo.length} low`, nearHi.length ? 'Near highs: ' + nearHi.slice(0, 4).map(s => esc(s.sym)).join(', ') + (nearHi.length > 4 ? '…' : '') : nearLo.length ? 'Near lows: ' + nearLo.slice(0, 4).map(s => esc(s.sym)).join(', ') : 'None within 3% of either'),
+    vix ? kpi('Volatility (VIX)', `${vix.price.toFixed(2)}`, `${fmtPct(vix.chg)} · ${vix.price < 15 ? 'calm' : vix.price < 20 ? 'normal' : vix.price < 30 ? 'elevated' : 'stressed'}`, '^VIX') : '',
+  ].join('');
+
+  // movers
+  const gainers = sorted.filter(s => s.chg > 0).slice(0, 8), losers = sorted.filter(s => s.chg < 0).slice(-8).reverse();
+  $('#a-movers').innerHTML =
+    moversCard('Biggest gainers', sess, gainers, 'No watched stock is up.') +
+    moversCard('Biggest losers', sess, losers, 'No watched stock is down.') +
+    moversCard('Most unusual moves', 'largest relative to each stock\'s own typical day', unusual.slice(0, 5), 'Not enough history yet.');
+
+  // sectors
+  const rk = S.sectorRange, rname = {chg:'1 day', ret5:'5 days', ret21:'1 month', ret63:'3 months'}[rk];
+  const rows = SECTORS.map(sec => {
+    const e = S.stats[sec.etf], mem = stocks.filter(s => s.sector === sec).sort((a, b) => b.chg - a.chg);
+    const eq = mem.length ? mean(mem.map(s => s[rk]).filter(ok).concat(mem.some(s => ok(s[rk])) ? [] : [0])) : null;
+    return {sec, e, mem, v: e && ok(e[rk]) ? e[rk] : eq, up: mem.filter(s => s.chg > 0.00005).length};
+  }).sort((a, b) => (ok(b.v) ? b.v : -9) - (ok(a.v) ? a.v : -9));
+  const maxAbs = Math.max(0.004, ...rows.map(r => ok(r.v) ? Math.abs(r.v) : 0));
+  const rng_ = ['chg', 'ret5', 'ret21', 'ret63'].map((k, i) => `<button data-act="range" data-k="${k}" aria-pressed="${rk === k}">${['1D', '5D', '1M', '3M'][i]}</button>`).join('');
+  $('#a-sectors').innerHTML = `<div class="card"><h2>Sectors <span class="sub">${rname} performance, by sector ETF</span><span class="sp-r"><span class="tgl" role="group" aria-label="Performance window">${rng_}</span></span></h2>
+    <div class="srow s-head"><span>Sector</span><span>${rname} change</span><span class="num"></span><span class="num" title="Watched stocks in this sector that are up in the latest session">Up</span><span title="Speculative model lean for the sector ETF, next session">Next lean</span></div>
+    ${rows.map(r => { const w = ok(r.v) ? (Math.abs(r.v) / maxAbs * 48).toFixed(1) : 0, best = r.mem[0], worst = r.mem[r.mem.length - 1];
+      return `<div class="srow" data-sym="${esc(r.sec.etf)}" tabindex="0" title="${esc(r.sec.name)} (${esc(r.sec.etf)}): ${fmtPct(r.v)} over ${rname}"><span class="s-n"><b>${esc(r.sec.name)}</b><span>${best ? `Best ${esc(best.sym)} ${fmtPct(best.chg, 1)} · worst ${esc(worst.sym)} ${fmtPct(worst.chg, 1)}` : esc(r.sec.etf)}</span></span><span class="dbar">${ok(r.v) ? `<i class="${r.v >= 0 ? 'u' : 'dn'}" style="width:${w}%"></i>` : ''}</span><span class="num">${pctSpan(r.v)}</span><span class="num muted">${r.up}/${r.mem.length}</span><span>${leanChip(S.pred[r.sec.etf])}</span></div>`; }).join('')}
+    </div>` + rotationCard();
+
+  // predictions
+  const pl = $('.pred-list'), keep = pl ? pl.scrollTop : 0;
+  const picks = []; gainers.slice(0, 5).concat(losers.slice(0, 5)).sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg)).forEach(s => picks.push(s));
+  const m = S.market;
+  $('#a-preds').innerHTML = `<div class="card pred-card"><h2>Predicted next moves <span class="sub">with counterpoints</span></h2><p class="hint">For the market and the ${picks.length} biggest movers. Click any stock anywhere for its own read.</p><div class="pred-list">
+    ${m ? `<article class="pred"><div class="pred-h"><span class="sym">Overall market</span><span class="nm">${m.adv} up · ${m.dec} down of ${m.n}</span></div>${callHtml(m, m.label, null)}${argsHtml(m)}</article>` : ''}
+    ${picks.map(predCard).join('') || '<p class="hint" style="margin-top:10px">Per-stock reads need a year of price history, which has not loaded yet. They will appear on the next successful refresh.</p>'}</div></div>`;
+  const pl2 = $('.pred-list'); if (pl2) pl2.scrollTop = keep;
+
+  // heat board
+  $('#a-heat').innerHTML = `<h2>All watched stocks by sector <span class="sub">${sess}</span><span class="sp-r legend"><span>−3%</span><span class="ramp">${[-0.03, -0.015, 0, 0.015, 0.03].map(v => `<i style="background:color-mix(in oklab,var(--${v >= 0 ? 'up' : 'down'}) ${Math.round(Math.abs(v) / 0.03 * 62)}%,var(--surface2))"></i>`).join('')}</span><span>+3%</span></span></h2>
+    <div class="heat">${SECTORS.map(sec => { const mem = stocks.filter(s => s.sector === sec).sort((a, b) => b.chg - a.chg), e = S.stats[sec.etf]; return `<div class="hg"><h3>${esc(sec.name)} ${e ? pctSpan(e.chg) : ''}</h3><div class="hc">${mem.map(chipHtml).join('')}</div></div>`; }).join('')}</div>`;
+
+  renderOutlook();
+  renderFull();
+  $('#a-foot').innerHTML = `Prices: Yahoo Finance (unofficial feed, may be delayed; index and ETF data included). Statistics are computed in this window from one year of daily closes: typical day = 30-session standard deviation of daily returns, RSI = 14-day Wilder, beta = 60 sessions vs the S&amp;P 500. Sector performance uses the SPDR sector ETFs. The sector outlook ranks those ETFs against the S&amp;P 500 using relative strength over 1, 3, 6 and 12 months, a 2-year reversal measure from weekly closes, trend, breadth, and volatility. The "lean" is a weighted blend of six simple price signals (trend, one-month momentum, RSI, size of latest move, sector and market backdrop), shown as a rough score and never as a guarantee. <b>Nothing here is investment advice.</b>`;
+}
+function renderOutlook() {
+  const o = S.outlook, el = $('#a-outlook');
+  if (!o) { el.innerHTML = `<h2>Sector outlook <span class="sub">predicted winners and losers</span></h2><p class="hint">Needs a year of sector price history, which has not loaded yet.</p>`; return; }
+  const pick = (x, h) => { const k = x.dir > 0 ? 'up' : 'down';
+    return `<div class="pick"><button data-sym="${esc(x.sec.etf)}" title="Open ${esc(x.sec.name)} (${esc(x.sec.etf)})"><span class="pk-n"><i class="${k}">${ARW[k]}</i>${esc(x.sec.name)}</span><span class="pk-o" title="Rough model lean that the sector beats the S&amp;P 500 over the ${esc(h.span)}. A heuristic score, not a calibrated probability.">${x.dir > 0 ? `${x.pUp}/${100 - x.pUp} to beat the index` : `${100 - x.pUp}/${x.pUp} to trail the index`} · ${esc(x.conviction.toLowerCase())}</span></button><p><b>Why:</b> ${esc(x.why.slice(0, 2).join(' '))}</p><p class="but"><b>But:</b> ${esc(x.con.slice(0, 2).join(' '))}</p></div>`; };
+  el.innerHTML = `<h2>Sector outlook <span class="sub">predicted winners and losers versus the S&amp;P 500, over three horizons</span><span class="spec">speculative</span></h2>
+    <p class="hint">Ranked by simple price signals for each horizon. "Winner" means expected to beat the S&amp;P 500, not guaranteed to rise. Click a sector for its chart and statistics.</p>
+    <div class="ol">${HORIZONS.map(h => { const d = o[h.id]; return `<section class="ol-h"><h3>${h.name}<span>${h.span}</span></h3>
+      <h4><i class="up">▲</i>Likely winners</h4>${d.winners.length ? d.winners.map(x => pick(x, h)).join('') : '<p class="ol-none">No sector stands out on the upside.</p>'}
+      <h4><i class="down">▼</i>Likely losers</h4>${d.losers.length ? d.losers.map(x => pick(x, h)).join('') : '<p class="ol-none">No sector stands out on the downside.</p>'}
+      <h4>All sectors, strongest to weakest <span style="text-transform:none;letter-spacing:0;font-weight:400">(beat / trail lean)</span></h4><div class="ol-rank">${d.all.map(x => `<span class="n">${esc(x.sec.name)}</span><span class="dbar" role="img" aria-label="model score ${x.score.toFixed(2)}">${Math.abs(x.score) > 0.01 ? `<i class="${x.score > 0 ? 'u' : 'dn'}" style="width:${(Math.min(1, Math.abs(x.score)) * 50).toFixed(1)}%"></i>` : ''}</span><span class="num" title="Model lean that the sector beats the S&amp;P 500 (first number) or trails it (second)">${x.pUp}/${100 - x.pUp}</span>`).join('')}</div>
+      <h4>Counterpoints for this horizon</h4><ul class="ol-cav">${d.caveats.map(c => `<li>${esc(c)}</li>`).join('')}</ul></section>`; }).join('')}</div>`;
+}
+
+function rotationCard() {
+  const m = S.market; if (!m || !ok(m.cyc) || !ok(m.def)) return '';
+  const sp = m.cyc - m.def;
+  return `<div class="card"><h2>Rotation <span class="sub">where money moved in the latest session</span></h2>
+    <div class="stats" style="margin-top:6px"><div><span>Cyclical sectors (avg)</span><b>${pctSpan(m.cyc)}</b></div><div><span>Defensive sectors (avg)</span><b>${pctSpan(m.def)}</b></div><div><span>Spread</span><b>${pctSpan(sp)}</b></div></div>
+    <p class="hint" style="margin:8px 0 0">${sp > 0.001 ? 'Cyclicals led, which usually reflects appetite for risk.' : sp < -0.001 ? 'Defensives led, which usually reflects caution.' : 'No meaningful gap between cyclical and defensive sectors.'} Cyclical = Tech, Communication, Discretionary, Financials, Industrials, Materials, Energy. Defensive = Health Care, Staples, Utilities, Real Estate.</p></div>`;
+}
+const FULL_COLS = [
+  ['sym', 'Stock', st => `<span class="sym">${esc(st.sym)}</span> <span class="muted">${esc(st.name)}</span>`, 'l'],
+  ['sector', 'Sector', st => esc(st.sector.short), 'l'],
+  ['price', 'Price', st => fmtP(st.price)],
+  ['chg', 'Change', st => delta(st.chg)],
+  ['z', 'Vs. typical', st => ok(st.z) ? (st.z >= 0 ? '+' : '−') + Math.abs(st.z).toFixed(1) + 'σ' : '–'],
+  ['ret5', '5 days', st => pctSpan(st.ret5, 1)],
+  ['ret21', '1 month', st => pctSpan(st.ret21, 1)],
+  ['ret63', '3 months', st => pctSpan(st.ret63, 1)],
+  ['ret252', '1 year', st => pctSpan(st.ret252, 1)],
+  ['rsi', 'RSI', st => ok(st.rsi) ? st.rsi.toFixed(0) : '–'],
+  ['volAnn', 'Volatility', st => ok(st.volAnn) ? (st.volAnn * 100).toFixed(0) + '%' : '–'],
+  ['beta', 'Beta', st => ok(st.beta) ? st.beta.toFixed(2) : '–'],
+  ['offHigh', 'Off 52-wk high', st => fmtPct(st.offHigh, 1)],
+  ['vol', 'Volume', st => fmtVol(st.vol)],
+  ['lean', 'Next lean', st => leanChip(S.pred[st.sym]), 'l'],
+];
+function renderFull() {
+  const k = S.sort.key, dir = S.sort.dir;
+  const val = st => k === 'sym' ? st.sym : k === 'sector' ? st.sector.name : k === 'lean' ? (S.pred[st.sym] ? S.pred[st.sym].score : null) : st[k];
+  const rows = stockStats().sort((a, b) => { const x = val(a), y = val(b); if (!ok(x) && typeof x !== 'string') return 1; if (!ok(y) && typeof y !== 'string') return -1; return (typeof x === 'string' ? x.localeCompare(y) : x - y) * dir; });
+  const wrap = $('#a-full .tablewrap'), keep = wrap ? wrap.scrollTop : 0;
+  $('#a-full').innerHTML = `<h2>Full statistics <span class="sub">click a column to sort, click a row for the detailed read</span></h2><div class="tablewrap"><table class="full"><thead><tr>${FULL_COLS.map(c => `<th data-act="sort" data-k="${c[0]}" class="${c[3] || ''} ${k === c[0] ? 'on' : ''}" aria-sort="${k === c[0] ? (dir > 0 ? 'ascending' : 'descending') : 'none'}">${c[1]}${k === c[0] ? (dir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}</tr></thead><tbody>${rows.map(st => `<tr data-sym="${esc(st.sym)}" tabindex="0">${FULL_COLS.map(c => `<td class="${c[3] || 'num'}">${c[2](st)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const w2 = $('#a-full .tablewrap'); if (w2) w2.scrollTop = keep;
+}
+
+/* ───────── detail sheet ───────── */
+function renderDetail() {
+  const sym = S.selected, st = sym && S.stats[sym], modal = $('#modal');
+  if (!st) { modal.hidden = true; return; }
+  const pr = S.pred[sym], q = S.quotes[sym];
+  const stat = (l, v) => `<div><span>${l}</span><b>${v}</b></div>`;
+  const label = pr ? (pr.dir > 0 ? 'Leans up next session' : pr.dir < 0 ? 'Leans down next session' : 'No clear edge') : '';
+  $('#sheet').innerHTML = `
+    <div class="m-head"><h2>${esc(sym.replace('^', ''))}</h2><span class="nm">${esc(st.name)}${st.sector && st.kind === 'stock' ? ' · ' + esc(st.sector.name) : ''}</span><span class="px">${fmtP(st.price)} ${delta(st.chg)}</span><button class="icon-btn" data-act="close" aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>
+    <div class="m-grid"><div>
+      <div class="lg"><span><i style="background:var(--s1)"></i>Daily close, 1 year</span>${ok(st.ma50) ? '<span><i style="background:var(--s2)"></i>50-day average</span>' : ''}${ok(st.ma200) ? '<span><i style="background:var(--s3)"></i>200-day average</span>' : ''}</div>
+      <div class="chart" id="chart"></div>
+      <div class="stats">
+        ${stat('Previous close', fmtP(st.prev))}${stat('Session range', `${fmtP(st.lo)} – ${fmtP(st.hi)}`)}${stat('Volume', fmtVol(st.vol))}
+        ${stat('Move vs. typical day', ok(st.z) ? (st.z >= 0 ? '+' : '−') + Math.abs(st.z).toFixed(1) + 'σ' : '–')}${stat('Typical daily move', ok(st.sigma) ? '±' + (st.sigma * 100).toFixed(2) + '%' : '–')}${stat('Volatility (annualized)', ok(st.volAnn) ? (st.volAnn * 100).toFixed(0) + '%' : '–')}
+        ${stat('5 days', pctSpan(st.ret5, 1))}${stat('1 month', pctSpan(st.ret21, 1))}${stat('3 months', pctSpan(st.ret63, 1))}${stat('1 year', pctSpan(st.ret252, 1))}
+        ${stat('RSI (14)', ok(st.rsi) ? st.rsi.toFixed(0) : '–')}${stat('Beta vs S&P 500', ok(st.beta) ? st.beta.toFixed(2) : '–')}${stat('Move net of market', ok(st.chgAdj) ? pctSpan(st.chgAdj) : '–')}
+        ${stat('50-day average', fmtP(st.ma50))}${stat('200-day average', fmtP(st.ma200))}${stat('52-week range', `${fmtP(st.lo52)} – ${fmtP(st.hi52)}`)}${stat('Off 52-week high', fmtPct(st.offHigh, 1))}${stat('Streak', st.streak ? Math.abs(st.streak) + (st.streak > 0 ? ' up' : ' down') + ' session' + (Math.abs(st.streak) > 1 ? 's' : '') : '–')}
+      </div></div>
+      <div>${pr ? `<h2 style="font-size:13.500px;margin:0 0 2px">Predicted next move</h2>${callHtml(pr, label, pr.band)}
+        <p class="hint" style="margin:0 0 6px">Typical one-week range: ${fmtP(pr.band.wlo)} to ${fmtP(pr.band.whi)}.</p>${argsHtml(pr).replace('class="args"', 'class="args" style="grid-template-columns:1fr"')}
+        <table class="sig"><thead><tr><th>Signal</th><th class="l">Reading</th><th class="l" title="Left = bearish, right = bullish">Bearish · Bullish</th></tr></thead><tbody>${pr.signals.map(s => `<tr style="cursor:default"><td>${esc(s.name)}</td><td class="l muted">${esc(s.reading)}</td><td class="l"><span class="mb" role="img" aria-label="${s.score > 0.05 ? 'bullish' : s.score < -0.05 ? 'bearish' : 'neutral'}">${Math.abs(s.score) > 0.02 ? `<i class="${s.score > 0 ? 'u' : 'dn'}" style="width:${(Math.abs(s.score) * 50).toFixed(0)}%"></i>` : ''}</span></td></tr>`).join('')}</tbody></table>` : `<p class="hint">${st.kind === 'index' ? 'Index values are shown for context. Per-stock reads are available for stocks and sector ETFs.' : 'No read yet: price history has not loaded.'}</p>`}
+      </div></div>`;
+  modal.hidden = false;
+  drawChart($('#chart'), st);
+}
+function drawChart(el, st) {
+  const c = st.series, T = st.seriesT, n = c.length;
+  if (n < 3) { el.innerHTML = '<p class="hint">Price history is not available right now.</p>'; return; }
+  const W = Math.max(320, el.clientWidth), H = 250, L = 4, R = 52, Tp = 8, B = 20;
+  const maOf = k => c.map((_, i) => i >= k - 1 ? mean(c.slice(i - k + 1, i + 1)) : null);
+  const m50 = n >= 50 ? maOf(50) : null, m200 = n >= 200 ? maOf(200) : null;
+  let lo = Math.min.apply(null, c), hi = Math.max.apply(null, c);
+  const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+  const x = i => L + i / (n - 1) * (W - L - R), y = v => Tp + (1 - (v - lo) / (hi - lo)) * (H - Tp - B);
+  const path = a => { let d = '', pen = false; a.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; }); return d; };
+  const step = (() => { const raw = (hi - lo) / 4, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * mag; })();
+  let grid = '';
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) grid += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="ax" x="${W - R + 6}" y="${(y(v) + 3.5).toFixed(1)}">${v >= 1000 ? Math.round(v).toLocaleString('en-US') : +v.toFixed(2)}</text>`;
+  let xt = '', lastM = -1, lastX = -99;
+  T.forEach((t, i) => { const d = new Date(t * 1000), m = d.getMonth(); if (m !== lastM) { if (lastM !== -1 && x(i) - lastX > 46 && x(i) < W - R - 20) { xt += `<text class="ax" x="${x(i).toFixed(1)}" y="${H - 5}">${d.toLocaleDateString('en-US', {month:'short'})}${m === 0 ? " '" + String(d.getFullYear()).slice(2) : ''}</text>`; lastX = x(i); } lastM = m; } });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="One-year price chart for ${esc(st.sym)}">${grid}${xt}
+    <path class="area" d="${path(c)}L${x(n - 1).toFixed(1)} ${H - B}L${x(0).toFixed(1)} ${H - B}Z"/>
+    ${m200 ? `<path class="ln l3" d="${path(m200)}"/>` : ''}${m50 ? `<path class="ln l2" d="${path(m50)}"/>` : ''}<path class="ln l1" d="${path(c)}"/>
+    <circle class="dot" cx="${x(n - 1).toFixed(1)}" cy="${y(c[n - 1]).toFixed(1)}" r="4" fill="var(--s1)"/>
+    <g id="xh" visibility="hidden"><line class="ch" y1="${Tp}" y2="${H - B}"/><circle class="dot" r="4" fill="var(--s1)"/></g>
+    <rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent" id="hit"/></svg>`;
+  const tip = $('#tip'), xh = $('#xh', el), hit = $('#hit', el);
+  const move = ev => {
+    const r = hit.getBoundingClientRect(), i = clamp(Math.round((ev.clientX - r.left) / r.width * (n - 1)), 0, n - 1);
+    xh.setAttribute('visibility', 'visible');
+    xh.firstElementChild.setAttribute('x1', x(i)); xh.firstElementChild.setAttribute('x2', x(i));
+    xh.lastElementChild.setAttribute('cx', x(i)); xh.lastElementChild.setAttribute('cy', y(c[i]));
+    const d = new Date(T[i] * 1000);
+    tip.innerHTML = `<div class="muted">${d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'})}</div><div class="r"><span><i style="background:var(--s1)"></i>Close</span><b>${fmtP(c[i])}</b></div>${m50 && m50[i] != null ? `<div class="r"><span><i style="background:var(--s2)"></i>50-day</span><b>${fmtP(m50[i])}</b></div>` : ''}${m200 && m200[i] != null ? `<div class="r"><span><i style="background:var(--s3)"></i>200-day</span><b>${fmtP(m200[i])}</b></div>` : ''}`;
+    tip.hidden = false;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = clamp(ev.clientX + 14, 4, innerWidth - tw - 4) + 'px'; tip.style.top = clamp(ev.clientY - th - 10, 4, innerHeight - th - 4) + 'px';
+  };
+  hit.addEventListener('mousemove', move);
+  hit.addEventListener('mouseleave', () => { xh.setAttribute('visibility', 'hidden'); tip.hidden = true; });
+}
+
+/* ───────── mode switching: small window = ticker, full screen or large window = analysis ───────── */
+const isBig = () => innerWidth >= 760 && innerHeight >= 440;
+const currentMode = () => S.force || ((document.fullscreenElement || isBig()) ? 'analysis' : 'ticker');
+function applyMode() {
+  const m = currentMode();
+  if (document.body.className !== 'mode-' + m) {
+    document.body.className = 'mode-' + m;
+    if (m === 'ticker') { S.selected = null; $('#modal').hidden = true; $('#tip').hidden = true; }
+    if (Object.keys(S.stats).length) render();
+  }
+}
+function expand(sym) {
+  if (sym) S.selected = sym;
+  S.force = null;
+  const done = () => { if (currentMode() !== 'analysis') S.force = 'analysis'; applyMode(); if (S.selected) renderDetail(); };
+  const el = document.documentElement;
+  if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().then(done, done); else done();
+}
+function collapse() {
+  S.force = null;
+  if (document.fullscreenElement) { document.exitFullscreen().then(applyMode, applyMode); return; }
+  try { window.resizeTo(680, 170); } catch (e) { /* not allowed in a normal browser tab */ }
+  setTimeout(() => { if (isBig()) S.force = 'ticker'; applyMode(); }, 200);
+}
+function render() {
+  const m = currentMode();
+  if (m === 'ticker') renderTicker(); else { renderAnalysis(); if (S.selected) renderDetail(); }
+  const sp = S.stats['^GSPC'];
+  document.title = (sp && ok(sp.chg) ? `S&P ${ARW[dirOf(sp.chg)]}${Math.abs(sp.chg * 100).toFixed(2)}% · ` : '') + 'Ticker' + (S.source === 'demo' ? ' (demo)' : '');
+}
+
+/* ───────── events ───────── */
+document.addEventListener('click', ev => {
+  const act = ev.target.closest('[data-act]');
+  if (act) {
+    const a = act.dataset.act;
+    if (a === 'expand') expand();
+    else if (a === 'collapse') collapse();
+    else if (a === 'refresh') refresh(true);
+    else if (a === 'close') { S.selected = null; renderDetail(); }
+    else if (a === 'range') { S.sectorRange = act.dataset.k; renderAnalysis(); }
+    else if (a === 'sort') { const k = act.dataset.k; S.sort = {key: k, dir: S.sort.key === k ? -S.sort.dir : (k === 'sym' || k === 'sector' ? 1 : -1)}; renderFull(); }
+    return;
+  }
+  if (ev.target.id === 'modal') { S.selected = null; renderDetail(); return; }
+  const s = ev.target.closest('[data-sym]');
+  if (s) { if (currentMode() === 'ticker') expand(s.dataset.sym); else { S.selected = s.dataset.sym; renderDetail(); } }
+});
+document.addEventListener('keydown', ev => {
+  if (ev.target.closest('input,textarea') || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if (ev.key === 'Escape') { if (S.selected) { S.selected = null; renderDetail(); } else if (currentMode() === 'analysis' && !document.fullscreenElement) collapse(); }
+  else if (ev.key === 'f' || ev.key === 'F') { currentMode() === 'ticker' ? expand() : collapse(); }
+  else if (ev.key === 'r' || ev.key === 'R') refresh(true);
+  else if (ev.key === 'Enter') { const s = ev.target.closest && ev.target.closest('tr[data-sym],.srow[data-sym]'); if (s) { S.selected = s.dataset.sym; renderDetail(); } }
+});
+let rz = 0;
+addEventListener('resize', () => { if (S.force === 'ticker' && !isBig()) S.force = null; if (S.force === 'analysis' && isBig()) S.force = null; applyMode(); clearTimeout(rz); rz = setTimeout(() => { if (S.selected && currentMode() === 'analysis') renderDetail(); }, 150); });
+document.addEventListener('fullscreenchange', () => { S.force = null; applyMode(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.nextAt && Date.now() > S.nextAt) refresh(); });
+// tells the local server this window is still open, so it can shut itself down after the window closes
+if (location.protocol !== 'file:' && !PARAMS.get('api')) setInterval(() => { fetch(API + '/ping', {cache: 'no-store'}).catch(() => {}); }, 20000);
+
+applyMode();
+refresh();
+</script>
+</body>
+</html>
