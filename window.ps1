@@ -163,7 +163,7 @@ namespace TickerApp {
     }
 
     // The visible window, without the invisible resize borders.
-    Rectangle Visible() {
+    Rectangle VisibleRect() {
       RECT r;
       if (DwmGetWindowAttribute(Handle, 9, out r, Marshal.SizeOf(typeof(RECT))) == 0) return Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
       return Bounds;
@@ -250,7 +250,7 @@ namespace TickerApp {
     void Throw() {
       if (fullScreen) return;
       if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
-      Rectangle wa = Screen.FromHandle(Handle).WorkingArea, vis = Visible(), b = Bounds;
+      Rectangle wa = Screen.FromHandle(Handle).WorkingArea, vis = VisibleRect(), b = Bounds;
       int padTop = vis.Top - b.Top, padLeft = vis.Left - b.Left, padRight = b.Right - vis.Right;
       int topY = wa.Top - padTop, bottomY = wa.Bottom - vis.Height - padTop;
       int target;
