@@ -18,7 +18,7 @@ No install, no account, no API key. The whole app is `index.html` plus a tiny lo
 
 Download this repository (green **Code** button, then **Download ZIP**) and unzip it, or clone it.
 
-**Windows:** double-click `Start Ticker.cmd`. It uses the PowerShell that ships with Windows and opens a small Edge (or Chrome) window with no browser chrome.
+**Windows:** double-click `Start Ticker.cmd`. It uses the PowerShell that ships with Windows and opens a frameless window (Microsoft Edge WebView2, built into Windows 10 and 11) with no title bar: minimize, close and expand are drawn in the bar itself. The first launch downloads Microsoft's WebView2 SDK package once (about 9 MB from nuget.org, checked against a pinned checksum) into `%LOCALAPPDATA%\Ticker`. If that ever fails, it opens a small Edge or Chrome window instead and writes the reason to `window.log`.
 
 **Mac or Linux:** run `python3 server.py` (Python 3.8 or newer, standard library only).
 
@@ -32,6 +32,9 @@ The server listens on `http://localhost:17872` (your machine only; it moves to t
 | Press `Esc`, press `F` again, or click **Compact** | Back to the small ticker |
 | Click any stock, sector, or index | Its detail sheet: one-year chart, statistics, prediction, counterpoints |
 | Press `R` | Refresh now |
+| Drag the bar (Windows window) | Move the window |
+| Click the thin bar, click the ↕ button, or press `T` (Windows window) | Throw the window to the top or bottom edge of the screen |
+| Make the window 30 px tall | The thin bar: one row of prices plus the window buttons |
 | Make the small window taller | A heat board of every stock appears under the tape |
 
 The window picks its form from its size, so resizing it by hand works too. Prices refresh every minute while the market is open and every ten minutes when it is closed.
@@ -76,6 +79,7 @@ Open `index.html` in a text editor and edit the `WATCHLIST` block near the top o
 | `index.html` | The whole app: layout, statistics, prediction rules |
 | `Start Ticker.cmd` | Windows launcher (double-click) |
 | `server.ps1` | Windows local server, run by the launcher |
+| `window.ps1` | Windows frameless window, started by the server |
 | `server.py` | Local server for Mac, Linux, or Windows with Python |
 | `tests/` | Browser tests and a mock price feed |
 | `IMPROVEMENTS.md` | The backlog the weekly improvement run works from |
