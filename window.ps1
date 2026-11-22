@@ -7,7 +7,8 @@
 #
 # The first launch downloads Microsoft's WebView2 SDK package (about 9 MB, from nuget.org, checked
 # against a pinned SHA-256) and keeps the three files it needs under %LOCALAPPDATA%\Ticker.
-# If anything here fails, it falls back to a small Edge or Chrome app window with a normal title bar.
+# If anything here fails, it falls back to a small Edge or Chrome app window with a normal title bar
+# and writes the reason to window.log next to this file.
 #
 #   window.ps1 -Url http://localhost:17872/
 #   window.ps1 -Url ... -Browser        skip the frameless window and use the Edge/Chrome app window
@@ -20,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 $SdkVersion = '1.0.3967.48'
 $SdkSha256 = 'C66357AC7F324EC9BCAFE5241706A023B4122D8C22300C31DE4B0EB220DB689E'
 $Data = Join-Path $env:LOCALAPPDATA 'Ticker'
-$LogFile = Join-Path $Data 'window.log'
+$LogFile = Join-Path $PSScriptRoot 'window.log'   # only written when something goes wrong
 
 function Write-Log([string]$Text) {
   try { Add-Content -LiteralPath $LogFile -Value ((Get-Date -Format s) + '  ' + $Text) } catch { }
@@ -59,7 +60,6 @@ function Get-WebView2Sdk {
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $pkg = Join-Path $Data "webview2-$SdkVersion.nupkg"
   try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
-  Write-Log "Downloading WebView2 SDK $SdkVersion"
   (New-Object Net.WebClient).DownloadFile("https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$SdkVersion/microsoft.web.webview2.$SdkVersion.nupkg", $pkg)
   $hash = (Get-FileHash -LiteralPath $pkg -Algorithm SHA256).Hash
   if ($hash -ne $SdkSha256) { Remove-Item -LiteralPath $pkg -Force; throw "WebView2 SDK download did not match its expected checksum ($hash)." }
@@ -385,6 +385,6 @@ try {
   $result = [TickerApp.TickerWindow]::Run($Url, $Data, (Join-Path $sdk 'WebView2Loader.dll'))
   if ($result) { throw $result }
 } catch {
-  Write-Log ("Frameless window failed, using the browser window instead: " + $_.Exception.Message)
+  Write-Log ("Frameless window failed, using the browser window instead: " + $_.Exception.Message + "`r`n" + (($Error | Select-Object -First 6) -join "`r`n"))
   Open-BrowserWindow
 }
