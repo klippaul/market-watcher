@@ -119,7 +119,7 @@ namespace TickerApp {
     double DpiScale { get { try { return GetDpiForWindow(Handle) / 96.0; } catch { return DeviceDpi / 96.0; } } }
     int Px(int css) { return (int)Math.Round(css * DpiScale); }
 
-    // ── frame: keep the resizable border (and Windows snapping), drop the caption ──
+    // frame: keep the resizable border (and Windows snapping), drop the caption
     protected override void OnHandleCreated(EventArgs e) {
       base.OnHandleCreated(e);
       int round = 2; // DWMWCP_ROUND: rounded corners on Windows 11; ignored elsewhere
@@ -169,7 +169,7 @@ namespace TickerApp {
       return Bounds;
     }
 
-    // ── start-up ──
+    // start-up
     protected override async void OnLoad(EventArgs e) {
       base.OnLoad(e);
       int ncW = Width - ClientSize.Width, ncH = Height - ClientSize.Height;
@@ -212,7 +212,7 @@ namespace TickerApp {
       }
     }
 
-    // ── messages from the page ──
+    // messages from the page
     void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e) {
       string msg;
       try { msg = e.TryGetWebMessageAsString(); } catch { return; }
@@ -275,7 +275,7 @@ namespace TickerApp {
       anim.Start();
     }
 
-    // ── full screen (the expand button) ──
+    // full screen (the expand button)
     void SetFullScreen(bool on) {
       if (on == fullScreen) return;
       if (on) {
@@ -304,7 +304,7 @@ namespace TickerApp {
 
     protected override void OnFormClosing(FormClosingEventArgs e) { SaveBounds(); base.OnFormClosing(e); }
 
-    // ── remembered size and position ──
+    // remembered size and position
     void SaveBounds() {
       if (fullScreen || WindowState != FormWindowState.Normal) return;
       Rectangle b = !compactBounds.IsEmpty ? compactBounds : Bounds;
@@ -340,7 +340,7 @@ namespace TickerApp {
       return Icon.FromHandle(bmp.GetHicon());
     }
 
-    // ── Win32 ──
+    // Win32
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct MINMAXINFO { public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize; }
