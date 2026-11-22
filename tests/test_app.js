@@ -33,6 +33,29 @@ const stopMock = async () => { if (mock) mock.kill(); mock = null; await sleep(3
     p = await open(DEMO, 420, 520);
     check('tall compact window shows the heat board', await p.locator('#board .chip').count() >= 60);
 
+    // ── thin bar and the Windows host window (window.ps1), with chrome.webview faked
+    p = await open(DEMO, 900, 30);
+    check('thin bar in a browser shows the expand button but no window controls', await p.locator('#ticker [data-act="expand"]').isVisible() && await p.locator('#ticker .win').isHidden());
+    const hostCtx = { viewport: { width: 900, height: 30 } };
+    const hp = await (await browser.newContext(hostCtx)).newPage();
+    hp.on('pageerror', e => errors.push(e.message));
+    await hp.addInitScript(() => { window.__sent = []; window.chrome = window.chrome || {}; window.chrome.webview = { postMessage: m => window.__sent.push(m), addEventListener() {} }; });
+    await hp.goto(DEMO); await hp.waitForSelector('#boot', { state: 'detached' }); await sleep(400);
+    const fit = await hp.evaluate(() => { const t = document.querySelector('#tape-track .ti'), r = t.getBoundingClientRect(), fs = parseFloat(getComputedStyle(t).fontSize); return { top: r.top, bottom: r.bottom, fs, h: innerHeight }; });
+    check('thin bar text fits without clipping', fit.top >= 0 && fit.bottom <= fit.h && fit.fs >= 13, fit);
+    check('host window shows minimize, close and throw on the expand row', await hp.locator('#ticker [data-act="minimize"]').isVisible() && await hp.locator('#ticker [data-act="quit"]').isVisible() && await hp.locator('#ticker [data-act="throw"]').isVisible() && await hp.locator('#ticker [data-act="expand"]').isVisible());
+    await hp.locator('#ticker [data-act="minimize"]').click(); await hp.locator('#ticker [data-act="quit"]').click(); await hp.locator('#ticker [data-act="throw"]').click();
+    check('window buttons message the host', JSON.stringify(await hp.evaluate(() => window.__sent.splice(0))) === '["minimize","quit","throw"]');
+    await hp.locator('#tape').click({ position: { x: 200, y: 15 } }); await sleep(300);
+    check('clicking the thin bar throws the window and does not open a stock', JSON.stringify(await hp.evaluate(() => window.__sent.splice(0))) === '["throw"]' && await hp.evaluate(() => document.body.className) === 'mode-ticker');
+    await hp.mouse.move(300, 15); await hp.mouse.down(); await hp.mouse.move(320, 15, { steps: 4 }); await hp.mouse.up(); await sleep(200);
+    check('dragging the thin bar asks the host to move the window', JSON.stringify(await hp.evaluate(() => window.__sent.splice(0))) === '["drag"]');
+    await hp.setViewportSize({ width: 680, height: 138 }); await sleep(300);
+    await hp.evaluate(() => document.querySelector('#tape-track .ti[data-sym="MSFT"]').click()); await sleep(500);
+    check('in the taller ticker, tape stocks still open their detail', await hp.evaluate(() => document.body.className === 'mode-analysis' && S.selected === 'MSFT'));
+    check('analysis header has minimize and close in the host', await hp.locator('.a-head [data-act="minimize"]').isVisible() && await hp.locator('.a-head [data-act="quit"]').isVisible());
+    await hp.close();
+
     // ── full analysis (demo data)
     p = await open(DEMO, 1920, 1080, { colorScheme: 'dark' });
     check('large window shows the analysis view', await p.evaluate(() => document.body.className) === 'mode-analysis');

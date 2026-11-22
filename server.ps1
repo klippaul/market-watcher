@@ -8,10 +8,12 @@
 #   server.ps1 -Port 9000            use another port (default 17872)
 #   server.ps1 -NoOpen               start without opening a window
 #   server.ps1 -Stay                 keep running after the window closes
+#   server.ps1 -Browser              open an Edge/Chrome app window instead of the frameless one
 param(
   [int]$Port = 17872,
   [switch]$NoOpen,
-  [switch]$Stay
+  [switch]$Stay,
+  [switch]$Browser
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -24,21 +26,11 @@ $Intervals = @('1m', '2m', '5m', '15m', '30m', '60m', '1d', '1wk')
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 
 function Open-TickerWindow([string]$Url) {
-  # A small chromeless window in Edge (always present on Windows) or Chrome; otherwise the default browser.
-  $candidates = @(
-    "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
-    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-    "$env:LocalAppData\Google\Chrome\Application\chrome.exe"
-  )
-  foreach ($exe in $candidates) {
-    if (Test-Path -LiteralPath $exe) {
-      Start-Process -FilePath $exe -ArgumentList "--app=$Url", '--window-size=680,170'
-      return
-    }
-  }
-  Start-Process $Url
+  # window.ps1 opens the frameless Ticker window (or falls back to an Edge/Chrome app window).
+  # (one string with quoted paths, because Start-Process does not quote array items containing spaces)
+  $psArgs = '-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "' + (Join-Path $Root 'window.ps1') + '" -Url "' + $Url + '"'
+  if ($Browser) { $psArgs += ' -Browser' }
+  Start-Process -FilePath 'powershell.exe' -ArgumentList $psArgs -WindowStyle Hidden
 }
 
 function Test-PortBusy([int]$P) {
