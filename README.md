@@ -45,6 +45,7 @@ Tip: on Windows, PowerToys "Always on Top" (`Win+Ctrl+T`) will pin the compact t
 - **Sector outlook:** predicted winning and losing sectors versus the S&P 500 over the short term (1 to 2 weeks), medium term (1 to 3 months), and long term (6 to 12 months), each with its reasons, a counterpoint, a full ranking of all 11 sectors, and horizon-level caveats.
 - **Predicted next moves:** a lean (up, down, or no clear edge) for the overall market and the ten biggest movers, the reasons behind it, a typical next-session price range, and what would change the read.
 - **Counterpoints:** every prediction lists the strongest arguments against itself.
+- **Prediction scorecard:** how the past leans actually turned out. The app remembers each session's leans and checks them against the next session's close, then shows the hit rate overall, for each of the six signals on its own, and for the overall market lean, next to the share of stocks that rose anyway.
 - **Full statistics:** a sortable table of every stock with returns, RSI, volatility, beta, distance from the 52-week high, and volume.
 
 ### How the predictions work, and their limits
@@ -52,6 +53,15 @@ Tip: on Windows, PowerToys "Always on Top" (`Win+Ctrl+T`) will pin the compact t
 The "lean" is a weighted blend of six simple, well-known price signals: trend (50-day and 200-day averages), one-month momentum, RSI (overbought or oversold), the size of the latest move, the sector's recent strength, and the broad market's state. The sector outlook works the same way but compares each sector with the S&P 500: one-month relative strength, RSI, and breadth for the short term; three- and six-month relative strength, trend, and market regime for the medium term; twelve-month relative strength, a two-year reversal measure, distance from the 52-week high, the 200-day trend, and volatility for the long term. Signals that agree with the lean are shown as reasons. Signals that disagree are shown as counterpoints, along with structural objections such as "a move this large probably has a news catalyst the model cannot see."
 
 **This is speculative and is not financial advice.** The model sees only prices. It knows nothing about earnings, news, valuations, or your circumstances. The numbers such as "56/44" are a rough score, not a calibrated probability. Expect it to be wrong often.
+
+### The scorecard
+
+The scorecard is the model's real track record, kept next to its claims. While the app shows live prices it records every watched stock's lean for the session (the last one it saw that day). After the following session closes, it compares each lean with where the stock closed, measured from the price at the time of the lean. "No clear edge" reads are not scored.
+
+- It only counts sessions when the app was open with live prices. Saved and demo prices are never recorded.
+- It lives in this browser's storage on your machine and is not sent anywhere. **Clear record** (two clicks) erases it.
+- It keeps about a year of per-session totals, not every individual lean.
+- A few sessions prove nothing. Stocks move together, so the number of sessions matters much more than the number of leans, and a good stretch is not a reason to trade on the leans.
 
 ## Where the data comes from
 

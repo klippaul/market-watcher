@@ -46,6 +46,7 @@ const stopMock = async () => { if (mock) mock.kill(); mock = null; await sleep(3
     check('sector outlook shows picks with Why and But', await p.locator('#a-outlook .pick').count() >= 3 && await p.locator('#a-outlook .pick p.but').count() === await p.locator('#a-outlook .pick').count());
     check('sector outlook has horizon counterpoints', await p.locator('#a-outlook .ol-cav li').count() >= 6);
     check('full statistics table lists the watchlist', await p.locator('.full tbody tr').count() >= 60);
+    check('scorecard records nothing from simulated prices and says so', await p.evaluate(() => localStorage.getItem('ticker-score-v1')) === null && /simulated/.test(await p.locator('#a-score').innerText()) && /none yet/.test(await p.locator('#a-track').innerText()));
     await p.screenshot({ path: path.join(shots, 'analysis.png'), fullPage: true });
     await p.locator('#a-movers tbody tr').first().click(); await p.waitForSelector('#sheet .chart svg');
     check('detail sheet opens with chart and signals', await p.locator('#sheet .sig tbody tr').count() >= 4);
@@ -65,11 +66,35 @@ const stopMock = async () => { if (mock) mock.kill(); mock = null; await sleep(3
     let s = await st();
     check('live data loads through the proxy', s.source === 'live' && s.n >= 80 && s.preds >= 70 && s.weekly === 12, s);
     check('a symbol missing from the feed is tolerated', await p.evaluate(() => !S.stats.PLTR));
+
+    // ── prediction scorecard: today's leans are recorded, and an earlier session's leans are scored against the next close
+    const rec = await p.evaluate(() => { const sc = scoreLoad(), days = Object.keys(sc.open), o = sc.open[days[0]] || { r: {} }, rows = Object.values(o.r);
+      return { days: days.length, rows: rows.length, shape: rows.every(r => r.length === 8 && r[1] > 0 && Math.abs(r[0]) <= 1), market: !!o.m, scored: sc.days.length }; });
+    check('scorecard records the session\'s leans from live prices', rec.days === 1 && rec.rows >= 60 && rec.shape && rec.market && rec.scored === 0, rec);
+    check('scorecard says it is waiting for the next close', /Waiting for the next close: \d+ leans/.test(await p.locator('#sc-wait').innerText()));
+    // Plant leans for the session two bars back (the next bar is a finished session): alternate up and down, with only the Trend signal active.
+    const want = await p.evaluate(() => {
+      const sc = scoreLoad(), r = {}, exp = { n: 0, hit: 0, up: 0, trend: 0 }; let day = null, i = 0;
+      for (const u of UNIVERSE) { const d = S.daily[u.sym], q = S.quotes[u.sym]; if (!d || !q || d.c.length < 5) continue;
+        const k = d.c.length - 3, base = d.c[k], next = d.c[k + 1], dir = i++ % 2 ? 1 : -1, moved = Math.sign(next - base);
+        day = dayOf(d.t[k], q.gmt); r[u.sym] = [dir, base, 1, 0, 0, 0, 0, 0];
+        if (moved) { exp.n++; if (moved === dir) exp.hit++; if (moved > 0) { exp.up++; exp.trend++; } } }
+      const g = S.daily['^GSPC']; sc.open[day] = { at: 1, m: [1, g.c[g.c.length - 3]], r };
+      localStorage.setItem('ticker-score-v1', JSON.stringify(sc)); exp.day = day; exp.mkt = Math.sign(g.c[g.c.length - 2] - g.c[g.c.length - 3]); return exp; });
+    await p.evaluate(() => refresh(true)); await sleep(1500);
+    const got = await p.evaluate(() => { const sc = scoreLoad(), d = sc.days[0] || {}; return { days: sc.days.length, d: d.d, n: d.n, hit: d.hit, up: d.up, trend: d.sg && d.sg[0], other: d.sg && d.sg[1], m: d.m, open: Object.keys(sc.open).length }; });
+    check('scorecard scores a past session against the next close', got.days === 1 && got.d === want.day && got.n === want.n && got.hit === want.hit && got.up === want.up && want.n >= 60, { got, want });
+    check('scorecard scores each signal and the market lean', got.trend && got.trend[0] === want.n && got.trend[1] === want.trend && got.other[0] === 0 && got.m && got.m[0] === 1 && got.m[1] === want.mkt && got.open === 1, { got, want });
+    const pct = Math.round(want.hit / want.n * 100) + '%';
+    check('scorecard shows the hit rate, the per-signal table and its counterpoints', (await p.locator('#sc-stats').innerText()).includes(`${pct} (${want.hit} of ${want.n})`) && await p.locator('#sc-signals tbody tr').count() === 7 && await p.locator('#sc-days tbody tr').count() === 1 && await p.locator('#a-score .ol-cav li').count() >= 3);
+    check('track record is shown next to the predictions', (await p.locator('#a-track').innerText()).includes(`${pct} of ${want.n} scored leans`));
+    await p.screenshot({ path: path.join(shots, 'scorecard.png'), fullPage: true });
     await stopMock();
     await p.evaluate(() => refresh(true)); await sleep(2500);
     s = await st();
     check('feed outage falls back to saved prices', s.source === 'cache' && s.n >= 80, s);
     check('outage is announced', /saved prices/i.test(await p.locator('#a-alert').innerText()));
+    check('scorecard keeps its results but stops recording on saved prices', /Nothing is being recorded right now/.test(await p.locator('#a-score').innerText()) && await p.evaluate(() => scoreLoad().days.length) === 1);
     await p.reload(); await p.waitForSelector('#boot', { state: 'detached' }); await sleep(300);
     check('saved prices survive a reload', (await st()).source === 'cache');
     const p2 = await open(LIVE, 680, 138);
@@ -77,6 +102,11 @@ const stopMock = async () => { if (mock) mock.kill(); mock = null; await sleep(3
     await startMock('bull');
     await p.evaluate(() => refresh(true)); await p2.evaluate(() => refresh(true)); await sleep(1500);
     check('recovers to live when the feed returns', (await st()).source === 'live' && await p2.evaluate(() => S.source) === 'live');
+
+    await p.locator('[data-act="score-clear"]').click();
+    const kept = await p.evaluate(() => scoreLoad().days.length);
+    await p.locator('[data-act="score-clear"]').click();
+    check('clearing the scorecard takes two clicks', kept === 1 && await p.evaluate(() => scoreLoad().days.length) === 0 && /No results yet/.test(await p.locator('#a-score').innerText()));
 
     // ── one window, two forms
     await p2.locator('[data-act="expand"]').click(); await sleep(600);

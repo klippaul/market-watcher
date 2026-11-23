@@ -179,6 +179,19 @@ td .sym{font-weight:650} td .nm{display:block;font-size:11px;color:var(--muted);
 .ol-rank span.n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ol-cav{margin:0;padding:0 0 0 15px} .ol-cav li{font-size:12px;line-height:1.38;color:var(--ink2);margin-bottom:4px} .ol-cav li::marker{color:var(--warn-ink)}
 @media (max-width:1100px){ .ol{grid-template-columns:1fr} .ol-h{padding-left:0;border-left:0;margin-top:14px} .ol-h:first-child{margin-top:0} }
+/* prediction scorecard */
+.sc-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:8px 28px;margin-top:12px}
+.sc-grid h3,.sc-h{margin:0 0 2px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.sc-t td{font-size:12px} .sc-t tbody tr{cursor:default} .sc-t tbody tr:hover{background:none}
+.sc-t tr.all td{font-weight:650}
+.sc-t .mb{position:relative;width:84px;height:8px;background:var(--neutral);border-radius:4px;display:inline-block;vertical-align:middle}
+.sc-t .mb::before{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--axis)}
+.sc-t .mb i{position:absolute;top:0;height:8px;min-width:2px} .sc-t .mb i.u{left:50%;background:var(--up);border-radius:0 4px 4px 0} .sc-t .mb i.dn{right:50%;background:var(--down);border-radius:4px 0 0 4px}
+#sc-stats small{font-weight:400;font-size:11.5px;color:var(--muted)}
+.sc-wait{font-size:12px;color:var(--ink2);margin:8px 0 0}
+.sc-h{margin-top:12px}
+.track{margin:0 0 6px;font-size:11.5px;color:var(--ink2)} .track a{color:inherit}
+@media (max-width:900px){ .sc-grid{grid-template-columns:1fr} }
 .heat{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px 16px}
 .heat .hg h3{margin:0 0 5px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:baseline} .heat .hg h3 span{font-weight:400;font-size:11.5px}
 .heat .hc{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:4px}
@@ -262,6 +275,7 @@ td .sym{font-weight:650} td .nm{display:block;font-size:11px;color:var(--muted);
     <div class="col c3" id="a-preds"></div>
   </div>
   <div class="card sect" id="a-outlook"></div>
+  <div class="card sect" id="a-score"></div>
   <div class="card sect" id="a-heat"></div>
   <div class="card sect" id="a-full"></div>
   <p class="foot" id="a-foot"></p>
@@ -328,6 +342,7 @@ const PARAMS = new URLSearchParams(location.search);
 const API = PARAMS.get('api') || 'api';
 const FORCE_DEMO = PARAMS.has('demo');
 const CACHE_KEY = 'ticker-cache-v1';
+const SCORE_KEY = 'ticker-score-v1';
 
 const S = {
   quotes:{}, daily:{}, weekly:{}, stats:{}, pred:{}, market:null, outlook:null,
@@ -335,6 +350,7 @@ const S = {
   updated:0, lastError:'', cacheTime:0,
   force:null, selected:null, sectorRange:'chg', sort:{key:'chg', dir:-1},
   dailyAt:0, loading:false, timer:null,
+  score:{v:1, open:{}, days:[]}, scoreAsk:0,
 };
 
 /* ───────── helpers ───────── */
@@ -598,6 +614,7 @@ function compute() {
   for (const sym in S.stats) if (INFO[sym] && INFO[sym].kind !== 'index') S.pred[sym] = predict(S.stats[sym]);
   S.market = marketRead();
   S.outlook = sectorOutlook();
+  try { scoreUpdate(); } catch (e) { console.error(e); }
 }
 const stockStats = () => UNIVERSE.map(u => S.stats[u.sym]).filter(st => st && ok(st.chg));
 
@@ -805,6 +822,93 @@ function sectorOutlook() {
   return out;
 }
 
+/* ───────── prediction scorecard: remembers each session's leans in this browser and checks them against the next close ─────────
+   Only live prices are recorded, never saved or simulated ones. A stock's lean is kept as it stood at the last refresh of a
+   session, then compared with where that stock closed in the following session. Once a session is scored, only its totals
+   are kept (about 0.3 KB a day), so the record stays small. Nothing leaves this browser. */
+const SCORE_SIGNALS = ['Trend', '1-month momentum', 'Overbought / oversold', 'Size of latest move', 'Sector backdrop', 'Market backdrop'];
+const SCORE_KEEP = 260;   // scored sessions kept, about one year
+function scoreLoad() {
+  try { const s = JSON.parse(localStorage.getItem(SCORE_KEY) || 'null'); if (s && s.v === 1 && s.open && Array.isArray(s.days)) return s; } catch (e) { /* storage blocked or unreadable */ }
+  return {v: 1, open: {}, days: []};
+}
+function scoreSave() { try { localStorage.setItem(SCORE_KEY, JSON.stringify(S.score)); } catch (e) { /* storage full or blocked */ } }
+const movedDir = ret => ret > 0.00005 ? 1 : ret < -0.00005 ? -1 : 0;
+function scoreUpdate() {
+  S.score = scoreLoad();                       // re-read each time, so two open windows do not overwrite each other's results
+  if (S.source !== 'live') return;
+  const sc = S.score, ref = S.quotes['AAPL'] || S.quotes['^GSPC'];
+  if (!ref) return;
+  const sess = dayOf(ref.time, ref.gmt), per = ref.period, now = Date.now() / 1000;
+  const sessDone = !!(per && per.regular) && !(now >= per.regular.start && now < per.regular.end);   // the latest session has closed
+  // Close of the first session after `day`, or null while that session is still unknown or in progress.
+  const closeAfter = (sym, day) => {
+    const d = S.daily[sym], q = S.quotes[sym];
+    if (!d || !q) return null;
+    const qd = dayOf(q.time, q.gmt);
+    for (let i = 0; i < d.t.length; i++) {
+      const bd = dayOf(d.t[i], q.gmt);
+      if (bd <= day) continue;
+      if (bd < qd) return d.c[i];
+      return sessDone && bd === qd ? q.price : null;
+    }
+    return null;
+  };
+  let changed = false;
+  // 1. score the recorded sessions whose following session has now closed
+  for (const key of Object.keys(sc.open)) {
+    const day = +key, rec = sc.open[key];
+    if (!(day < sess)) continue;
+    const mclose = closeAfter('^GSPC', day);
+    if (mclose == null) { if (sess - day > 30) { delete sc.open[key]; changed = true; } continue; }   // still waiting; give up after a month
+    const sum = {d: day, n: 0, hit: 0, tot: 0, up: 0, ne: 0, ul: [0, 0], dl: [0, 0], sg: SCORE_SIGNALS.map(() => [0, 0]), m: null};
+    for (const sym in rec.r) {
+      const r = rec.r[sym], c = closeAfter(sym, day);
+      if (c == null || !(r[1] > 0)) continue;
+      const ret = c / r[1] - 1;
+      if (Math.abs(ret) > 0.35) continue;      // a split or a bad print, not a move the lean could be judged on
+      const moved = movedDir(ret);
+      if (!moved) continue;                    // unchanged: neither right nor wrong
+      sum.tot++; if (moved > 0) sum.up++;
+      if (r[0]) { const h = r[0] === moved ? 1 : 0, side = r[0] > 0 ? sum.ul : sum.dl; sum.n++; sum.hit += h; side[0]++; side[1] += h; }
+      else sum.ne++;
+      for (let i = 0; i < SCORE_SIGNALS.length; i++) if (r[2 + i]) { sum.sg[i][0]++; if (r[2 + i] === moved) sum.sg[i][1]++; }
+    }
+    if (rec.m && rec.m[1] > 0) sum.m = [rec.m[0], movedDir(mclose / rec.m[1] - 1)];
+    if (sum.tot && !sc.days.some(x => x.d === day)) sc.days.push(sum);
+    delete sc.open[key]; changed = true;
+  }
+  sc.days.sort((a, b) => a.d - b.d);
+  if (sc.days.length > SCORE_KEEP) sc.days = sc.days.slice(-SCORE_KEEP);
+  // 2. record (or refresh) the leans for the latest session
+  const r = {};
+  for (const u of UNIVERSE) {
+    const pr = S.pred[u.sym], q = S.quotes[u.sym];
+    if (!pr || !q || dayOf(q.time, q.gmt) !== sess) continue;
+    const row = [pr.dir, q.price];
+    for (const name of SCORE_SIGNALS) { const g = pr.signals.find(x => x.name === name); row.push(g && Math.abs(g.score) >= 0.08 ? Math.sign(g.score) : 0); }
+    r[u.sym] = row;
+  }
+  if (Object.keys(r).length) {
+    const mq = S.quotes['^GSPC'];
+    sc.open[sess] = {at: Date.now(), m: S.market && mq && dayOf(mq.time, mq.gmt) === sess ? [S.market.dir, mq.price] : null, r};
+    changed = true;
+  }
+  if (changed) scoreSave();
+}
+function scoreTotals() {
+  const t = {days: 0, n: 0, hit: 0, tot: 0, up: 0, ne: 0, ul: [0, 0], dl: [0, 0], sg: SCORE_SIGNALS.map(() => [0, 0]), mn: 0, mhit: 0};
+  for (const d of S.score.days) {
+    t.days++; t.n += d.n; t.hit += d.hit; t.tot += d.tot; t.up += d.up; t.ne += d.ne;
+    for (let k = 0; k < 2; k++) { t.ul[k] += d.ul[k]; t.dl[k] += d.dl[k]; }
+    d.sg.forEach((g, i) => { if (t.sg[i]) { t.sg[i][0] += g[0]; t.sg[i][1] += g[1]; } });
+    if (d.m && d.m[0] && d.m[1]) { t.mn++; if (d.m[0] === d.m[1]) t.mhit++; }
+  }
+  return t;
+}
+const scoreDay = d => new Date(d * 864e5).toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC'});
+const ratePct = (hit, n) => n ? Math.round(hit / n * 100) + '%' : '–';
+
 /* ───────── market state ───────── */
 function marketState() {
   if (S.source === 'demo') return {key:'demo', label:'Simulated session'};
@@ -874,6 +978,10 @@ function callHtml(pr, label, band) {
   const k = pr.dir > 0 ? 'up' : pr.dir < 0 ? 'down' : 'flat';
   return `<div class="call"><span class="pill ${k}"><i class="${k}">${ARW[k]}</i>${esc(label)}</span><span class="meta" title="A heuristic score, not a calibrated probability">${pr.dir ? `${pr.pUp}/${100 - pr.pUp} up/down · ` : ''}${esc(pr.conviction)}</span><span class="spec">speculative</span>${band ? `<span class="meta" title="One standard deviation of this stock's recent daily moves around the current price">Typical next-session range ${fmtP(band.lo)} to ${fmtP(band.hi)} (±${(band.pct * 100).toFixed(1)}%)</span>` : ''}</div>`;
 }
+function trackLine() {
+  const t = scoreTotals();
+  return `<p class="track" id="a-track"><b>Track record:</b> ${t.n ? `${ratePct(t.hit, t.n)} of ${t.n} scored leans were right over ${t.days} session${t.days > 1 ? 's' : ''} (a coin flip gets 50%).` : 'none yet. Leans are checked after the next session closes.'} <a href="#a-score">See the scorecard</a></p>`;
+}
 function predCard(st) {
   const pr = S.pred[st.sym]; if (!pr) return '';
   const label = pr.dir > 0 ? 'Leans up next session' : pr.dir < 0 ? 'Leans down next session' : 'No clear edge';
@@ -931,7 +1039,7 @@ function renderAnalysis() {
   const pl = $('.pred-list'), keep = pl ? pl.scrollTop : 0;
   const picks = []; gainers.slice(0, 5).concat(losers.slice(0, 5)).sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg)).forEach(s => picks.push(s));
   const m = S.market;
-  $('#a-preds').innerHTML = `<div class="card pred-card"><h2>Predicted next moves <span class="sub">with counterpoints</span></h2><p class="hint">For the market and the ${picks.length} biggest movers. Click any stock anywhere for its own read.</p><div class="pred-list">
+  $('#a-preds').innerHTML = `<div class="card pred-card"><h2>Predicted next moves <span class="sub">with counterpoints</span></h2><p class="hint">For the market and the ${picks.length} biggest movers. Click any stock anywhere for its own read.</p>${trackLine()}<div class="pred-list">
     ${m ? `<article class="pred"><div class="pred-h"><span class="sym">Overall market</span><span class="nm">${m.adv} up · ${m.dec} down of ${m.n}</span></div>${callHtml(m, m.label, null)}${argsHtml(m)}</article>` : ''}
     ${picks.map(predCard).join('') || '<p class="hint" style="margin-top:10px">Per-stock reads need a year of price history, which has not loaded yet. They will appear on the next successful refresh.</p>'}</div></div>`;
   const pl2 = $('.pred-list'); if (pl2) pl2.scrollTop = keep;
@@ -941,8 +1049,9 @@ function renderAnalysis() {
     <div class="heat">${SECTORS.map(sec => { const mem = stocks.filter(s => s.sector === sec).sort((a, b) => b.chg - a.chg), e = S.stats[sec.etf]; return `<div class="hg"><h3>${esc(sec.name)} ${e ? pctSpan(e.chg) : ''}</h3><div class="hc">${mem.map(chipHtml).join('')}</div></div>`; }).join('')}</div>`;
 
   renderOutlook();
+  renderScore();
   renderFull();
-  $('#a-foot').innerHTML = `Prices: Yahoo Finance (unofficial feed, may be delayed; index and ETF data included). Statistics are computed in this window from one year of daily closes: typical day = 30-session standard deviation of daily returns, RSI = 14-day Wilder, beta = 60 sessions vs the S&amp;P 500. Sector performance uses the SPDR sector ETFs. The sector outlook ranks those ETFs against the S&amp;P 500 using relative strength over 1, 3, 6 and 12 months, a 2-year reversal measure from weekly closes, trend, breadth, and volatility. The "lean" is a weighted blend of six simple price signals (trend, one-month momentum, RSI, size of latest move, sector and market backdrop), shown as a rough score and never as a guarantee. <b>Nothing here is investment advice.</b>`;
+  $('#a-foot').innerHTML = `Prices: Yahoo Finance (unofficial feed, may be delayed; index and ETF data included). Statistics are computed in this window from one year of daily closes: typical day = 30-session standard deviation of daily returns, RSI = 14-day Wilder, beta = 60 sessions vs the S&amp;P 500. Sector performance uses the SPDR sector ETFs. The sector outlook ranks those ETFs against the S&amp;P 500 using relative strength over 1, 3, 6 and 12 months, a 2-year reversal measure from weekly closes, trend, breadth, and volatility. The "lean" is a weighted blend of six simple price signals (trend, one-month momentum, RSI, size of latest move, sector and market backdrop), shown as a rough score and never as a guarantee. The scorecard compares each recorded lean with the next session's close and is kept only in this browser. <b>Nothing here is investment advice.</b>`;
 }
 function renderOutlook() {
   const o = S.outlook, el = $('#a-outlook');
@@ -956,6 +1065,48 @@ function renderOutlook() {
       <h4><i class="down">▼</i>Likely losers</h4>${d.losers.length ? d.losers.map(x => pick(x, h)).join('') : '<p class="ol-none">No sector stands out on the downside.</p>'}
       <h4>All sectors, strongest to weakest <span style="text-transform:none;letter-spacing:0;font-weight:400">(beat / trail lean)</span></h4><div class="ol-rank">${d.all.map(x => `<span class="n">${esc(x.sec.name)}</span><span class="dbar" role="img" aria-label="model score ${x.score.toFixed(2)}">${Math.abs(x.score) > 0.01 ? `<i class="${x.score > 0 ? 'u' : 'dn'}" style="width:${(Math.min(1, Math.abs(x.score)) * 50).toFixed(1)}%"></i>` : ''}</span><span class="num" title="Model lean that the sector beats the S&amp;P 500 (first number) or trails it (second)">${x.pUp}/${100 - x.pUp}</span>`).join('')}</div>
       <h4>Counterpoints for this horizon</h4><ul class="ol-cav">${d.caveats.map(c => `<li>${esc(c)}</li>`).join('')}</ul></section>`; }).join('')}</div>`;
+}
+
+function renderScore() {
+  const el = $('#a-score'), t = scoreTotals(), sc = S.score;
+  const waiting = Object.keys(sc.open).map(Number).sort((a, b) => a - b);
+  const asking = Date.now() - S.scoreAsk < 6000, has = t.days > 0 || waiting.length > 0;
+  const paused = S.source === 'demo' ? 'Nothing is being recorded right now, because these prices are simulated.' : S.source === 'cache' ? 'Nothing is being recorded right now, because these are saved prices, not live ones.' : '';
+  const head = `<h2>Prediction scorecard <span class="sub">how past leans turned out, kept in this browser</span>${has ? `<span class="sp-r"><button class="icon-btn" data-act="score-clear" title="Erase the scorecard kept in this browser">${asking ? 'Click again to erase' : 'Clear record'}</button></span>` : ''}</h2>`;
+  const wait = waiting.length ? `<p class="sc-wait" id="sc-wait">Waiting for the next close: ${waiting.map(d => `${Object.keys(sc.open[d].r).length} leans from ${scoreDay(d)}`).join(', ')}.</p>` : '';
+  if (!t.days) {
+    el.innerHTML = head + `<p class="hint">No results yet. While it shows live prices, the app records each session's leans and checks them against where each stock closes in the following session. The first results appear after that session ends. ${paused}</p>` + wait;
+    return;
+  }
+  const stat = (l, v, tip) => `<div${tip ? ` title="${esc(tip)}"` : ''}><span>${l}</span><b>${v}</b></div>`;
+  const of = (hit, n) => n ? `${hit} of ${n}` : 'none yet';
+  const bar = (hit, n) => { if (!n) return ''; const x = hit / n - 0.5; return `<span class="mb" role="img" aria-label="${ratePct(hit, n)} right, ${x >= 0 ? 'better' : 'worse'} than a coin flip"><i class="${x >= 0 ? 'u' : 'dn'}" style="width:${(Math.min(0.5, Math.abs(x)) * 100).toFixed(1)}%"></i></span>`; };
+  const row = (name, hit, n, cls) => `<tr class="${cls || ''}"><td>${esc(name)}</td><td class="num">${n}</td><td class="num">${hit}</td><td class="num">${ratePct(hit, n)}</td><td class="l">${bar(hit, n)}</td></tr>`;
+  const recent = sc.days.slice(-8).reverse();
+  const mk = d => !d.m || !d.m[0] ? '<span class="muted">no lean</span>' : !d.m[1] ? '<span class="muted">unchanged</span>' : d.m[0] === d.m[1] ? 'right' : 'wrong';
+  el.innerHTML = head + `
+    <p class="hint">Each lean is checked against where the stock closed in the following session, measured from the last price the app saw on the day of the lean. "No clear edge" reads are not scored. ${paused}</p>
+    <div class="stats" id="sc-stats">
+      ${stat('Leans that were right', `${ratePct(t.hit, t.n)} <small>(${of(t.hit, t.n)})</small>`, 'Up or down leans across every watched stock, on every scored session. A coin flip gets 50%.')}
+      ${stat('Sessions scored', t.days)}
+      ${stat('Leaned up, then rose', of(t.ul[1], t.ul[0]))}
+      ${stat('Leaned down, then fell', of(t.dl[1], t.dl[0]))}
+      ${stat('Overall market lean right', of(t.mhit, t.mn), 'The "Overall market" lean, checked against the S&P 500 at the next close.')}
+      ${stat('Stocks that rose anyway', ratePct(t.up, t.tot), 'Share of all watched stocks that rose over the same sessions. Always guessing "up" would have scored this.')}
+    </div>
+    <div class="sc-grid">
+      <div><h3 title="How often each signal, taken on its own, pointed the way the stock then moved">By signal</h3>
+        <table class="sc-t" id="sc-signals"><thead><tr><th>Signal</th><th>Calls</th><th>Right</th><th>Hit rate</th><th class="l" title="Left of the line is worse than a coin flip, right is better">Vs. coin flip</th></tr></thead><tbody>
+        ${row('All six combined (the lean)', t.hit, t.n, 'all')}${SCORE_SIGNALS.map((nm, i) => row(nm, t.sg[i][1], t.sg[i][0])).join('')}</tbody></table></div>
+      <div><h3>Latest scored sessions</h3>
+        <table class="sc-t" id="sc-days"><thead><tr><th>Leans from</th><th>Right</th><th>Hit rate</th><th class="l">Market lean</th></tr></thead><tbody>
+        ${recent.map(d => `<tr><td>${scoreDay(d.d)}</td><td class="num">${of(d.hit, d.n)}</td><td class="num">${ratePct(d.hit, d.n)}</td><td class="l">${mk(d)}</td></tr>`).join('')}</tbody></table>${wait}</div>
+    </div>
+    <h3 class="sc-h">Counterpoints to this scorecard</h3><ul class="ol-cav">
+      <li>${t.days < 20 ? `It is too early to judge. ${t.days} session${t.days > 1 ? 's are' : ' is'} a small sample, and a hit rate this far from 50% can easily be luck.` : `Even ${t.days} sessions is a modest sample. Markets change character, and a rule that worked in one stretch often stops working in the next.`}</li>
+      <li>Stocks move together. On most days the leans rise or fall as a group, so the number of sessions matters much more than the number of leans.</li>
+      <li>Only sessions when this app was open with live prices are counted, and only in this browser. Compare the hit rate with "Stocks that rose anyway": in a rising market, any model that leans up looks clever.</li>
+      <li>A good record here is not a reason to trade on these leans. They remain speculative and are not financial advice.</li></ul>`;
 }
 
 function rotationCard() {
@@ -1095,6 +1246,7 @@ document.addEventListener('click', ev => {
     else if (a === 'refresh') refresh(true);
     else if (a === 'close') { S.selected = null; renderDetail(); }
     else if (a === 'range') { S.sectorRange = act.dataset.k; renderAnalysis(); }
+    else if (a === 'score-clear') { if (Date.now() - S.scoreAsk < 6000) { S.score = {v: 1, open: {}, days: []}; S.scoreAsk = 0; scoreSave(); renderAnalysis(); } else { S.scoreAsk = Date.now(); renderScore(); } }
     else if (a === 'sort') { const k = act.dataset.k; S.sort = {key: k, dir: S.sort.key === k ? -S.sort.dir : (k === 'sym' || k === 'sector' ? 1 : -1)}; renderFull(); }
     return;
   }
