@@ -68,7 +68,20 @@ svg.sp .sp-base{stroke:var(--axis);stroke-width:1}
 .ti .d{font-size:.82em}
 .ti:hover{background:var(--surface2)}
 .board{display:none}
-@media (max-height:69px){ .t-head{display:none} .ti{font-size:clamp(13px,46vh,24px)} }
+/* thin bar: one row, tape on the left, controls on the right */
+@media (max-height:69px){
+  #ticker{flex-direction:row}
+  .t-head{order:2;height:auto;gap:6px;padding:0 3px 0 6px;border-bottom:0;border-left:1px solid var(--grid)}
+  #t-status,.t-idx{display:none}
+  .ti{font-size:clamp(13px,50vh,24px);padding:0 .85em}
+  .t-head .icon-btn{height:min(24px,calc(100vh - 6px));min-width:min(24px,calc(100vh - 6px))}
+}
+/* window controls, shown only inside the Windows host window (no native title bar there) */
+.win{display:none;gap:4px;align-items:center;flex:none}
+.in-host .win{display:inline-flex}
+.win .icon-btn{padding:0 5px}
+.win .x:hover{background:var(--down);border-color:var(--down);color:#fff}
+.in-host .t-head,.in-host .a-head{user-select:none}
 @media (min-height:230px){
   .tape{flex:none;height:58px;border-bottom:1px solid var(--grid)} .ti{font-size:21px}
   .board{display:grid;flex:1;min-height:0;overflow:auto;padding:10px;gap:6px;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));align-content:start;background:var(--bg)}
@@ -236,6 +249,7 @@ td .sym{font-weight:650} td .nm{display:block;font-size:11px;color:var(--muted);
     <button class="icon-btn" data-act="expand" title="Expand to full-screen analysis (F)" aria-label="Expand to full-screen analysis">
       <svg viewBox="0 0 16 16"><path d="M9.5 2H14v4.5M6.5 14H2V9.500M14 2L9 7M2 14l5-5"/></svg>
     </button>
+    <span class="win"><button class="icon-btn" data-act="throw" title="Throw to the top or bottom of the screen (T). Clicking the thin bar does the same." aria-label="Move to the other screen edge"><svg viewBox="0 0 16 16"><path d="M8 1.5v13M5 4.5l3-3 3 3M5 11.5l3 3 3-3"/></svg></button><button class="icon-btn" data-act="minimize" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 16 16"><path d="M3 8.5h10"/></svg></button><button class="icon-btn x" data-act="quit" title="Close Ticker" aria-label="Close Ticker"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></span>
   </div>
   <div class="tape" id="tape"><div class="tape-track" id="tape-track"></div></div>
   <div class="board" id="board"></div>
@@ -251,6 +265,7 @@ td .sym{font-weight:650} td .nm{display:block;font-size:11px;color:var(--muted);
       <span id="a-src"></span>
       <button class="icon-btn" data-act="refresh" title="Refresh now (R)"><svg viewBox="0 0 16 16"><path d="M13.500 8a5.500 5.500 0 1 1-1.600-3.900M13.500 2v3h-3"/></svg>Refresh</button>
       <button class="icon-btn" data-act="collapse" title="Back to compact ticker (Esc or F)"><svg viewBox="0 0 16 16"><path d="M14 2L9.500 6.500M9.500 2.500v4h4M2 14l4.500-4.500M6.500 13.500v-4h-4"/></svg>Compact</button>
+      <span class="win"><button class="icon-btn" data-act="minimize" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 16 16"><path d="M3 8.5h10"/></svg></button><button class="icon-btn x" data-act="quit" title="Close Ticker" aria-label="Close Ticker"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></span>
     </div>
   </header>
   <div id="a-alert"></div>
@@ -1054,6 +1069,35 @@ function drawChart(el, st) {
   hit.addEventListener('mouseleave', () => { xh.setAttribute('visibility', 'hidden'); tip.hidden = true; });
 }
 
+/* ───────── Windows host window (window.ps1): no native title bar, so the page draws its own controls ─────────
+   Inside it, the page talks to the window through chrome.webview. In a normal browser none of this is active.
+   Press and drag the ticker header, the thin bar, or the analysis header to move the window.
+   A plain click on the thin bar (or the header's empty space) throws the window to the top or bottom screen edge. */
+const HOST = (window.chrome && window.chrome.webview) || null;
+const hostSend = msg => { try { HOST.postMessage(msg); } catch (e) { /* not in the host window */ } };
+if (HOST) document.documentElement.classList.add('in-host');
+const isThin = () => innerHeight <= 69;
+let press = null;
+document.addEventListener('pointerdown', ev => {
+  S.eatClick = false; press = null;
+  if (!HOST || ev.button !== 0 || document.fullscreenElement) return;
+  const zone = ev.target.closest('.t-head,.tape,.a-head');
+  if (!zone) return;
+  const onTape = zone.classList.contains('tape'), thin = isThin();
+  if (onTape && !thin) return;                                         // taller ticker: stocks on the tape stay clickable
+  if (!onTape && ev.target.closest('button,a,input,select')) return;  // controls keep working
+  press = {x: ev.screenX, y: ev.screenY, throwable: !zone.classList.contains('a-head')};
+});
+document.addEventListener('pointermove', ev => {
+  if (press && Math.abs(ev.screenX - press.x) + Math.abs(ev.screenY - press.y) > 4) { press = null; S.eatClick = true; hostSend('drag'); }
+});
+document.addEventListener('pointerup', () => {
+  if (!press) return;
+  const p = press; press = null;
+  if (p.throwable) { S.eatClick = true; hostSend('throw'); }
+});
+document.addEventListener('dblclick', ev => { if (HOST && ev.target.closest('.a-head') && !ev.target.closest('button')) hostSend('maximize'); });
+
 /* ───────── mode switching: small window = ticker, full screen or large window = analysis ───────── */
 const isBig = () => innerWidth >= 760 && innerHeight >= 440;
 const currentMode = () => S.force || ((document.fullscreenElement || isBig()) ? 'analysis' : 'ticker');
@@ -1075,7 +1119,8 @@ function expand(sym) {
 function collapse() {
   S.force = null;
   if (document.fullscreenElement) { document.exitFullscreen().then(applyMode, applyMode); return; }
-  try { window.resizeTo(680, 170); } catch (e) { /* not allowed in a normal browser tab */ }
+  if (HOST) hostSend('compact');
+  else try { window.resizeTo(680, 170); } catch (e) { /* not allowed in a normal browser tab */ }
   setTimeout(() => { if (isBig()) S.force = 'ticker'; applyMode(); }, 200);
 }
 function render() {
@@ -1087,10 +1132,12 @@ function render() {
 
 /* ───────── events ───────── */
 document.addEventListener('click', ev => {
+  if (S.eatClick) { S.eatClick = false; return; }   // this click was a throw or the end of a window drag
   const act = ev.target.closest('[data-act]');
   if (act) {
     const a = act.dataset.act;
     if (a === 'expand') expand();
+    else if (a === 'throw' || a === 'minimize' || a === 'quit') hostSend(a);
     else if (a === 'collapse') collapse();
     else if (a === 'refresh') refresh(true);
     else if (a === 'close') { S.selected = null; renderDetail(); }
@@ -1107,6 +1154,7 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') { if (S.selected) { S.selected = null; renderDetail(); } else if (currentMode() === 'analysis' && !document.fullscreenElement) collapse(); }
   else if (ev.key === 'f' || ev.key === 'F') { currentMode() === 'ticker' ? expand() : collapse(); }
   else if (ev.key === 'r' || ev.key === 'R') refresh(true);
+  else if ((ev.key === 't' || ev.key === 'T') && HOST && currentMode() === 'ticker') hostSend('throw');
   else if (ev.key === 'Enter') { const s = ev.target.closest && ev.target.closest('tr[data-sym],.srow[data-sym]'); if (s) { S.selected = s.dataset.sym; renderDetail(); } }
 });
 let rz = 0;
