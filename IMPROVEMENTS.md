@@ -13,7 +13,6 @@ Reorder, edit, or add items to steer it. Anything under "Ground rules" applies t
 
 ## Next up
 
-- [ ] **Prediction scorecard.** Remember each day's leans in the browser and show how often they were right, per signal and overall, so the model's real track record is visible next to its claims.
 - [ ] **Editable watchlist.** Add and remove symbols from the interface and keep the list between sessions, instead of editing `index.html`.
 - [ ] **Sector detail sheet.** When a sector is opened, show its short, medium, and long-term signals in a table like the per-stock one, plus its member stocks.
 - [ ] **Move alerts.** Flag a stock in the compact ticker when its move passes a chosen size (for example 2 times its typical day), with an optional desktop notification.
@@ -26,6 +25,7 @@ Reorder, edit, or add items to steer it. Anything under "Ground rules" applies t
 ## Ideas that need a decision first
 
 - Commentary written by Claude on top of the rule-based leans. Needs an Anthropic API key from the owner.
+- Backtest the leans over the past year of prices, so the scorecard has something to show on day one instead of filling in one session at a time. Needs a decision because it replays the rules on history, which is a different claim from a live record.
 - A second price source as a backup to Yahoo. Every free one tried so far needs an API key.
 
 ## Done
@@ -34,3 +34,4 @@ Reorder, edit, or add items to steer it. Anything under "Ground rules" applies t
 - [x] Biggest movers, sector performance, predicted next moves with counterpoints.
 - [x] Sector outlook over short, medium, and long term.
 - [x] Fallback to saved prices, then labelled demo data, when the feed is unreachable.
+- [x] Prediction scorecard: each session's leans are remembered in the browser and checked against the next close, overall and per signal.
